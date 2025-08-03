@@ -53,12 +53,13 @@ def get_db_context():
 
 
 # Multi-tenant row-level security
-@event.listens_for(Session, "after_bulk_insert")
-@event.listens_for(Session, "after_bulk_update")
-@event.listens_for(Session, "after_bulk_delete")
-def receive_after_bulk_operation(update_context):
-    """
-    Ensure tenant isolation for bulk operations
-    """
-    # This will be implemented with actual tenant context
-    pass
+# Note: Bulk operation events will be implemented when needed
+# @event.listens_for(Session, "after_bulk_insert")
+# @event.listens_for(Session, "after_bulk_update")
+# @event.listens_for(Session, "after_bulk_delete")
+# def receive_after_bulk_operation(update_context):
+#     """
+#     Ensure tenant isolation for bulk operations
+#     """
+#     # This will be implemented with actual tenant context
+#     pass

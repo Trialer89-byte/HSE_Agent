@@ -41,13 +41,38 @@ Rispondi SEMPRE in italiano e fornisci suggerimenti pratici e attuabili.
     
     async def analyze(self, permit_data: Dict[str, Any], context_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Analizza la qualità e completezza del contenuto del permesso
+        Analizza la qualità e completezza del contenuto del permesso con ricerca dinamica
         """
         try:
-            # Prepare input for LLM
+            # Phase 1: Initial analysis with provided documents
             permit_summary = self._format_permit_data(permit_data)
             context_summary = self._prepare_context_summary(context_documents)
             tenant_context = self._get_tenant_context()
+            
+            # Phase 2: Detect knowledge gaps and search for additional documents
+            knowledge_gaps = self.detect_knowledge_gaps(permit_data, context_documents)
+            additional_documents = []
+            
+            # Request additional documents based on gaps
+            if knowledge_gaps.get("missing_procedures"):
+                print(f"[{self.agent_name}] Searching for missing procedures: {knowledge_gaps['missing_procedures']}")
+                additional_docs = await self.search_operational_procedures(
+                    procedure_types=knowledge_gaps["missing_procedures"],
+                    work_context=[permit_data.get("work_type", ""), permit_data.get("location", "")]
+                )
+                additional_documents.extend(additional_docs)
+            
+            if knowledge_gaps.get("missing_regulations"):
+                print(f"[{self.agent_name}] Searching for missing regulations: {knowledge_gaps['missing_regulations']}")
+                additional_docs = await self.search_specific_regulations(
+                    regulation_types=knowledge_gaps["missing_regulations"],
+                    keywords=[permit_data.get("work_type", ""), "sicurezza", "protezione"]
+                )
+                additional_documents.extend(additional_docs)
+            
+            # Combine all available documents
+            all_documents = context_documents + additional_documents
+            enhanced_context_summary = self._prepare_context_summary(all_documents)
             
             messages = [
                 {"role": "system", "content": self.get_system_prompt()},
@@ -56,7 +81,16 @@ Rispondi SEMPRE in italiano e fornisci suggerimenti pratici e attuabili.
 
 {permit_summary}
 
+DOCUMENTI INIZIALI:
 {context_summary}
+
+DOCUMENTI AGGIUNTIVI RECUPERATI:
+{enhanced_context_summary if additional_documents else "Nessun documento aggiuntivo necessario."}
+
+ANALISI GAPS IDENTIFICATI:
+- Procedure mancanti: {', '.join(knowledge_gaps.get('missing_procedures', []))}
+- Normative mancanti: {', '.join(knowledge_gaps.get('missing_regulations', []))}
+- Copertura incompleta: {', '.join(knowledge_gaps.get('incomplete_coverage', []))}
 
 ANALIZZA la qualità e completezza di questo permesso di lavoro.
 
@@ -118,11 +152,17 @@ Rispondi in JSON con questa struttura:
             try:
                 result = json.loads(response)
                 
-                # Add metadata
+                # Add metadata including search statistics
                 result.update({
                     "timestamp": datetime.utcnow().isoformat(),
                     "agent_version": self.agent_version,
-                    "analysis_complete": True
+                    "analysis_complete": True,
+                    "search_enhancements": {
+                        "knowledge_gaps_detected": knowledge_gaps,
+                        "additional_documents_found": len(additional_documents),
+                        "searches_performed": self.additional_searches_used,
+                        "search_budget_remaining": self.max_additional_searches - self.additional_searches_used
+                    }
                 })
                 
                 # Validate output

@@ -1,4 +1,5 @@
 from typing import Optional, List
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, validator
 
 
@@ -60,8 +61,8 @@ class UserResponse(UserBase):
     permissions: List[str]
     is_active: bool
     is_verified: bool
-    last_login: Optional[str]
-    created_at: str
+    last_login: Optional[datetime]
+    created_at: datetime
 
     class Config:
         from_attributes = True

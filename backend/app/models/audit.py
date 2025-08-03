@@ -25,7 +25,7 @@ class AuditLog(Base, TenantMixin):
     # Details
     old_values = Column(JSON)
     new_values = Column(JSON)
-    metadata = Column(JSON, default={})
+    extra_data = Column(JSON, default={})
     
     # Context
     ip_address = Column(INET)

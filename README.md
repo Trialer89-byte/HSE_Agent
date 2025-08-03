@@ -63,7 +63,8 @@ graph TD
 - Docker & Docker Compose
 - Python 3.11+
 - 8GB RAM minimi
-- OpenAI API Key
+- **Gemini API Key** (gratuita) - https://makersuite.google.com/app/apikey
+- OpenAI API Key (opzionale, come fallback)
 
 ### Installazione
 
@@ -79,12 +80,31 @@ cp .env.example .env
 # Modifica .env con le tue configurazioni
 ```
 
+**Configurazione .env essenziale:**
+```bash
+# AI Provider (usa Gemini per default)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key-here
+
+# Database e sicurezza
+DB_PASSWORD=secure_password_here
+JWT_SECRET_KEY=ultra_secure_jwt_key_here
+REDIS_PASSWORD=redis_password_here
+MINIO_SECRET_KEY=minio_secret_here
+```
+
 3. **Avvio stack enterprise**
 ```bash
 docker-compose -f docker-compose.enterprise.yml up -d
 ```
 
-4. **Verifica stato servizi**
+4. **Test Gemini API (Windows)**
+```bash
+# Test rapido integrazione Gemini
+test-gemini.bat
+```
+
+5. **Verifica stato servizi**
 ```bash
 curl http://localhost:8000/health
 ```

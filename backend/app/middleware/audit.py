@@ -263,7 +263,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     action=f"{audit_data['method'].lower()}.{category}",
                     resource_type="api_request",
                     resource_name=audit_data["path"],
-                    metadata={
+                    extra_data={
                         "query_params": audit_data.get("query_params", {}),
                         "processing_time": audit_data.get("processing_time"),
                         "response_status": audit_data.get("response_status"),

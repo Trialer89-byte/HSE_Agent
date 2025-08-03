@@ -1,0 +1,100 @@
+services:
+  # === BACKEND ===
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://hse_user:HSEPassword2024!@db:5432/hse_db
+      - REDIS_URL=redis://:RedisPass2024!@redis:6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-hse_minio_user}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minio_secret_2024}
+      - WEAVIATE_URL=http://weaviate:8080
+      - WEAVIATE_API_KEY=
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-ultra_secure_jwt_key_2024}
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ENVIRONMENT=development
+      - DEBUG=True
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - minio
+      - weaviate
+    volumes:
+      - ./logs:/app/logs
+      - ./backend/app:/app/app
+    restart: unless-stopped
+
+  # === DATABASE ===
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=hse_db
+      - POSTGRES_USER=hse_user
+      - POSTGRES_PASSWORD=HSEPassword2024!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # === VECTOR DATABASE ===
+  weaviate:
+    image: semitechnologies/weaviate:1.22.4
+    environment:
+      - QUERY_DEFAULTS_LIMIT=25
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - AUTHENTICATION_APIKEY_ENABLED=false
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+      - DEFAULT_VECTORIZER_MODULE=text2vec-transformers
+      - ENABLE_MODULES=text2vec-transformers
+      - TRANSFORMERS_INFERENCE_API=http://transformers:8080
+      - CLUSTER_HOSTNAME=node1
+    ports:
+      - "8080:8080"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    depends_on:
+      - transformers
+    restart: unless-stopped
+
+  transformers:
+    image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
+    environment:
+      - ENABLE_CUDA=0
+    restart: unless-stopped
+
+  # === STORAGE ===
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-hse_minio_user}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minio_secret_2024}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  # === CACHING ===
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass RedisPass2024!
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  weaviate_data:
+  minio_data:
+  redis_data:

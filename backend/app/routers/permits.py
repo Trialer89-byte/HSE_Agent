@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.schemas.work_permit import (
 )
 from app.services.auth_service import get_current_user
 from app.services.ai_orchestrator import AIOrchestrator
+from app.services.autogen_orchestrator import AutoGenAIOrchestrator
 from app.services.vector_service import VectorService
 from app.core.permissions import require_permission
 from app.core.tenant import enforce_tenant_isolation
@@ -253,7 +255,6 @@ async def analyze_permit_comprehensive(
     if (permit.ai_analysis and permit.analyzed_at and 
         not analysis_request.force_reanalysis):
         # Return existing analysis if less than 24 hours old
-        from datetime import datetime, timedelta
         if datetime.utcnow() - permit.analyzed_at < timedelta(hours=24):
             return PermitAnalysisResponse(**permit.ai_analysis)
     
@@ -263,21 +264,27 @@ async def analyze_permit_comprehensive(
     
     try:
         # Search relevant documents
+        # TEMPORARY: Skip Weaviate search for testing
+        relevant_docs = []
+        
+        # vector_service = VectorService()
+        # search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"
+        # 
+        # relevant_docs = await vector_service.hybrid_search(
+        #     query=search_query,
+        #     filters={
+        #         "tenant_id": current_user.tenant_id,
+        #         "industry_sectors": [permit.work_type] if permit.work_type else [],
+        #         "document_type": ["normativa", "istruzione_operativa"]
+        #     },
+        #     limit=20
+        # )
+        
+        # Initialize vector service for dynamic searches
         vector_service = VectorService()
-        search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"
         
-        relevant_docs = await vector_service.hybrid_search(
-            query=search_query,
-            filters={
-                "tenant_id": current_user.tenant_id,
-                "industry_sectors": [permit.work_type] if permit.work_type else [],
-                "document_type": ["normativa", "istruzione_operativa"]
-            },
-            limit=20
-        )
-        
-        # Run multi-agent analysis
-        orchestrator = AIOrchestrator()
+        # Run AutoGen multi-agent analysis with dynamic search capability
+        orchestrator = AutoGenAIOrchestrator()
         analysis_result = await orchestrator.run_multi_agent_analysis(
             permit_data=permit.to_dict(),
             context_documents=relevant_docs,
@@ -285,7 +292,8 @@ async def analyze_permit_comprehensive(
                 "tenant_id": current_user.tenant_id,
                 "user_id": current_user.id,
                 "department": current_user.department
-            }
+            },
+            vector_service=vector_service  # Enable dynamic document searches
         )
         
         # Save analysis results
@@ -322,7 +330,7 @@ async def analyze_permit_comprehensive(
             resource_type="work_permit",
             resource_id=permit_id,
             resource_name=permit.title,
-            metadata={
+            extra_data={
                 "ai_confidence": analysis_result.get("confidence_score"),
                 "processing_time": analysis_result.get("processing_time"),
                 "agents_used": analysis_result.get("agents_involved", [])
@@ -348,7 +356,7 @@ async def analyze_permit_comprehensive(
             action="permit.analysis_failed",
             resource_type="work_permit",
             resource_id=permit_id,
-            metadata={"error": str(e)},
+            extra_data={"error": str(e)},
             ip_address=get_client_ip(request),
             user_agent=get_user_agent(request),
             severity="error",

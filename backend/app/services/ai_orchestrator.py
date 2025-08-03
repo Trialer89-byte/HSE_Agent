@@ -17,31 +17,38 @@ class AIOrchestrator:
     
     def __init__(self):
         self.agents = {}
-        self.analysis_timeout = 300  # 5 minutes timeout
+        self.analysis_timeout = 120  # 2 minutes timeout (4 agents × 30s each)
+        self.vector_service = None  # Will be injected for dynamic searches
     
     async def run_multi_agent_analysis(
         self,
         permit_data: Dict[str, Any],
         context_documents: List[Dict[str, Any]],
-        user_context: Dict[str, Any]
+        user_context: Dict[str, Any],
+        vector_service = None
     ) -> Dict[str, Any]:
         """
         Orchestrazione completa multi-agente con output strutturato
         """
         start_time = time.time()
+        print(f"[AIOrchestrator] Starting multi-agent analysis for permit {permit_data.get('id')}")
         
         try:
-            # Initialize agents with user context
+            # Store vector service for agent access
+            self.vector_service = vector_service
+            
+            # Initialize agents with user context and vector service for dynamic searches
             agents = {
-                "content_analyst": ContentAnalysisAgent(user_context),
-                "risk_analyst": RiskAnalysisAgent(user_context),
-                "compliance_checker": ComplianceCheckerAgent(user_context),  
-                "dpi_specialist": DPISpecialistAgent(user_context),
-                "citation_agent": DocumentCitationAgent(user_context)
+                "content_analyst": ContentAnalysisAgent(user_context, vector_service),
+                "risk_analyst": RiskAnalysisAgent(user_context, vector_service),
+                "compliance_checker": ComplianceCheckerAgent(user_context, vector_service),  
+                "dpi_specialist": DPISpecialistAgent(user_context, vector_service),
+                "citation_agent": DocumentCitationAgent(user_context, vector_service)
             }
             
             # Phase 1: Parallel analysis of independent agents
             parallel_tasks = []
+            print(f"[AIOrchestrator] Starting parallel analysis with {len(agents)} agents")
             
             # Content analysis
             parallel_tasks.append(
@@ -115,7 +122,7 @@ class AIOrchestrator:
                 "analysis_complete": True,
                 "confidence_score": confidence_score,
                 "processing_time": round(processing_time, 2),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow(),
                 "agents_involved": list(agents.keys()),
                 "ai_version": "1.0",
                 
@@ -152,9 +159,28 @@ class AIOrchestrator:
                 "confidence_score": 0.0,
                 "processing_time": round(processing_time, 2),
                 "error": f"Multi-agent analysis failed: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow(),
                 "agents_involved": [],
-                "ai_version": "1.0"
+                "ai_version": "1.0",
+                # Required fields with empty defaults
+                "executive_summary": {
+                    "overall_score": 0.0,
+                    "critical_issues": 0,
+                    "recommendations": 0,
+                    "compliance_level": "not_analyzed",
+                    "estimated_completion_time": "Unknown",
+                    "key_findings": ["Analysis failed"],
+                    "next_steps": ["Retry analysis"]
+                },
+                "action_items": [],
+                "citations": {},
+                "completion_roadmap": {},
+                "performance_metrics": {
+                    "total_processing_time": processing_time,
+                    "parallel_phase_time": 0.0,
+                    "agents_successful": 0,
+                    "agents_total": 5
+                }
             }
     
     async def _run_agent_with_timeout(self, agent_coroutine, agent_name: str):

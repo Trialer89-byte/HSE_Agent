@@ -25,7 +25,7 @@ class AuditService:
         resource_name: Optional[str] = None,
         old_values: Optional[Dict[str, Any]] = None,
         new_values: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        extra_data: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         api_endpoint: Optional[str] = None,
@@ -51,7 +51,7 @@ class AuditService:
             resource_name=resource_name,
             old_values=old_values or {},
             new_values=new_values or {},
-            metadata=metadata or {},
+            extra_data=extra_data or {},
             ip_address=ip_address,
             user_agent=user_agent,
             api_endpoint=api_endpoint,
@@ -77,17 +77,17 @@ class AuditService:
         Log authentication attempts
         """
         action = "auth.login_success" if success else "auth.login_failed"
-        metadata = {}
+        extra_data = {}
         
         if not success and failure_reason:
-            metadata["failure_reason"] = failure_reason
+            extra_data["failure_reason"] = failure_reason
         
         await self.log_action(
             user_id=None,
             tenant_id=tenant_id,
             action=action,
             resource_type="authentication",
-            metadata=metadata,
+            extra_data=extra_data,
             ip_address=ip_address,
             user_agent=user_agent,
             severity="warning" if not success else "info",
@@ -100,7 +100,7 @@ class AuditService:
         resource_type: str,
         resource_id: int,
         action: str = "read",
-        metadata: Optional[Dict[str, Any]] = None
+        extra_data: Optional[Dict[str, Any]] = None
     ):
         """
         Log data access for compliance
@@ -111,7 +111,7 @@ class AuditService:
             action=f"data.{action}",
             resource_type=resource_type,
             resource_id=resource_id,
-            metadata=metadata,
+            extra_data=extra_data,
             category="data_access"
         )
     
@@ -126,7 +126,7 @@ class AuditService:
         """
         Log AI analysis operations
         """
-        metadata = {
+        extra_data = {
             "confidence_score": confidence_score,
             "processing_time_seconds": processing_time,
             "agents_used": analysis_results.get("agents_involved", []),
@@ -139,7 +139,7 @@ class AuditService:
             action="ai.analysis_completed",
             resource_type="work_permit",
             resource_id=permit_id,
-            metadata=metadata,
+            extra_data=extra_data,
             category="ai_analysis"
         )
     
@@ -150,7 +150,7 @@ class AuditService:
         description: str,
         ip_address: str,
         severity: str = "warning",
-        metadata: Optional[Dict[str, Any]] = None
+        extra_data: Optional[Dict[str, Any]] = None
     ):
         """
         Log security events
@@ -161,7 +161,7 @@ class AuditService:
             action=f"security.{event_type}",
             resource_type="security",
             resource_name=description,
-            metadata=metadata,
+            extra_data=extra_data,
             ip_address=ip_address,
             severity=severity,
             category="security"

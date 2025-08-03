@@ -174,9 +174,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         if settings.environment == "production":
             security_headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         
-        # Add CSP for HTML responses
+        # Add CSP for HTML responses (disabled in development)
         content_type = response.headers.get("content-type", "")
-        if "text/html" in content_type:
+        if "text/html" in content_type and settings.environment == "production":
             security_headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline'; "
@@ -184,6 +184,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 "img-src 'self' data:; "
                 "connect-src 'self'"
             )
+        # CSP disabled in development to allow API docs to work properly
         
         # Apply headers
         for header, value in security_headers.items():

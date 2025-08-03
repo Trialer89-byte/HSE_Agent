@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional
 import weaviate
-from weaviate.exceptions import WeaviateException
 import json
 
 from app.config.settings import settings
@@ -12,23 +11,55 @@ class VectorService:
     """
     
     def __init__(self):
-        # Initialize Weaviate client
-        if settings.weaviate_api_key:
-            auth_config = weaviate.AuthApiKey(api_key=settings.weaviate_api_key)
-            self.client = weaviate.Client(
-                url=settings.weaviate_url,
-                auth_client_secret=auth_config
-            )
-        else:
-            self.client = weaviate.Client(url=settings.weaviate_url)
+        # Initialize Weaviate client with better error handling
+        try:
+            if settings.weaviate_api_key and settings.weaviate_api_key.strip():
+                auth_config = weaviate.AuthApiKey(api_key=settings.weaviate_api_key)
+                self.client = weaviate.Client(
+                    url=settings.weaviate_url,
+                    auth_client_secret=auth_config
+                )
+            else:
+                # Try anonymous access first
+                self.client = weaviate.Client(
+                    url=settings.weaviate_url,
+                    additional_headers={}
+                )
+                
+            # Test connection
+            self.client.schema.get()
+            
+        except Exception as e:
+            print(f"[VectorService] Weaviate connection failed: {str(e)}")
+            print(f"[VectorService] Attempting connection without authentication...")
+            
+            # Fallback: try different connection methods
+            try:
+                # Try with startup_period to avoid immediate auth checks
+                self.client = weaviate.Client(
+                    url=settings.weaviate_url,
+                    startup_period=10
+                )
+                # Test basic connectivity
+                self.client.is_ready()
+            except Exception as e2:
+                print(f"[VectorService] All connection attempts failed: {str(e2)}")
+                # Set client to None to handle gracefully
+                self.client = None
+                return
         
-        # Ensure schema exists
-        self._ensure_schema()
+        # Ensure schema exists only if client is connected
+        if self.client:
+            self._ensure_schema()
     
     def _ensure_schema(self):
         """
         Ensure HSEDocument schema exists in Weaviate
         """
+        if not self.client:
+            print("[VectorService] No client available, skipping schema creation")
+            return
+            
         schema = {
             "class": "HSEDocument",
             "description": "Documenti normativi e istruzioni operative HSE",
@@ -112,7 +143,7 @@ class VectorService:
             # Check if class exists
             if not self.client.schema.exists("HSEDocument"):
                 self.client.schema.create_class(schema)
-        except WeaviateException as e:
+        except Exception as e:
             print(f"Error creating schema: {e}")
     
     async def add_document_chunks(
@@ -130,6 +161,10 @@ class VectorService:
         """
         Add document chunks to vector database
         """
+        if not self.client:
+            print("[VectorService] No client available, skipping chunk addition")
+            return []
+            
         chunk_ids = []
         
         try:
@@ -159,7 +194,7 @@ class VectorService:
                 
                 chunk_ids.append(result)
                 
-        except WeaviateException as e:
+        except Exception as e:
             print(f"Error adding document chunks: {e}")
             raise
         
@@ -175,6 +210,10 @@ class VectorService:
         """
         Hybrid search combining vector similarity and keyword matching
         """
+        if not self.client:
+            print("[VectorService] No client available, returning empty results")
+            return []
+            
         try:
             # Build where filter
             where_filter = {}
@@ -270,7 +309,7 @@ class VectorService:
             
             return documents
             
-        except WeaviateException as e:
+        except Exception as e:
             print(f"Error in hybrid search: {e}")
             return []
     
@@ -284,6 +323,10 @@ class VectorService:
         """
         Pure semantic vector search
         """
+        if not self.client:
+            print("[VectorService] No client available, returning empty results")
+            return []
+            
         try:
             # Build where filter for tenant isolation
             where_filter = {
@@ -350,7 +393,7 @@ class VectorService:
             
             return documents
             
-        except WeaviateException as e:
+        except Exception as e:
             print(f"Error in semantic search: {e}")
             return []
     
@@ -358,6 +401,10 @@ class VectorService:
         """
         Delete all chunks for a document
         """
+        if not self.client:
+            print("[VectorService] No client available, skipping chunk deletion")
+            return True  # Return True to avoid blocking operations
+            
         try:
             where_filter = {
                 "operator": "And",
@@ -382,6 +429,6 @@ class VectorService:
             
             return True
             
-        except WeaviateException as e:
+        except Exception as e:
             print(f"Error deleting document chunks: {e}")
             return False

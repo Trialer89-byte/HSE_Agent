@@ -59,6 +59,10 @@ def has_permission(user: User, required_permission: str) -> bool:
     """
     user_permissions = get_user_permissions(user.role, user.permissions or [])
     
+    # Check for global wildcard (super admin)
+    if "*" in user_permissions:
+        return True
+    
     # Check exact match
     if required_permission in user_permissions:
         return True

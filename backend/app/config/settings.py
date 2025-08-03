@@ -35,9 +35,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24
     
-    # OpenAI
-    openai_api_key: str
+    # AI Provider Configuration
+    ai_provider: str = "gemini"  # "openai" or "gemini"
+    
+    # OpenAI (fallback)
+    openai_api_key: str = ""
     openai_model: str = "gpt-4-turbo-preview"
+    
+    # Gemini
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-1.5-pro"
     
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]

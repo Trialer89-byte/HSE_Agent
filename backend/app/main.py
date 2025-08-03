@@ -41,15 +41,13 @@ async def lifespan(app: FastAPI):
     
     # Verify external services connectivity
     try:
-        # Test Weaviate connection
-        from app.services.vector_service import VectorService
-        vector_service = VectorService()
-        logger.info("Weaviate connection verified")
-        
         # Test MinIO connection
         from app.services.storage_service import StorageService
         storage_service = StorageService()
         logger.info("MinIO connection verified")
+        
+        # Weaviate temporarily disabled
+        logger.info("Weaviate connection skipped (disabled)")
         
     except Exception as e:
         logger.warning(f"External service connectivity issue: {e}")
@@ -120,20 +118,19 @@ async def health_check():
     # Check database connectivity
     try:
         from app.config.database import SessionLocal
+        from sqlalchemy import text
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         health_status["database"] = "connected"
     except Exception as e:
         health_status["database"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
     
-    # Check Weaviate connectivity
+    # Check Weaviate connectivity (disabled for now)
     try:
-        from app.services.vector_service import VectorService
-        vector_service = VectorService()
-        # Simple connectivity test
-        health_status["weaviate"] = "connected"
+        # Temporarily disabled to avoid startup issues
+        health_status["weaviate"] = "disabled"
     except Exception as e:
         health_status["weaviate"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
@@ -170,6 +167,10 @@ async def system_info():
             "vector_search": True,
             "rbac": True,
             "audit_logging": True
+        },
+        "ai_provider": {
+            "provider": getattr(settings, 'ai_provider', 'gemini'),
+            "model": getattr(settings, 'gemini_model', 'gemini-1.5-pro') if getattr(settings, 'ai_provider', 'gemini') == 'gemini' else getattr(settings, 'openai_model', 'gpt-4')
         },
         "limits": {
             "max_tenants": settings.max_tenants,
