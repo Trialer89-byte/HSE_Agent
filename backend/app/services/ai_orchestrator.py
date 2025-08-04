@@ -17,7 +17,8 @@ class AIOrchestrator:
     
     def __init__(self):
         self.agents = {}
-        self.analysis_timeout = 120  # 2 minutes timeout (4 agents × 30s each)
+        self.analysis_timeout = 60  # Reduced to 1 minute timeout for faster response
+        self.agent_timeout = 15  # 15 seconds per agent
         self.vector_service = None  # Will be injected for dynamic searches
     
     async def run_multi_agent_analysis(
@@ -122,7 +123,7 @@ class AIOrchestrator:
                 "analysis_complete": True,
                 "confidence_score": confidence_score,
                 "processing_time": round(processing_time, 2),
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "agents_involved": list(agents.keys()),
                 "ai_version": "1.0",
                 
@@ -152,6 +153,7 @@ class AIOrchestrator:
         except Exception as e:
             # Handle catastrophic failure
             processing_time = time.time() - start_time
+            print(f"[AIOrchestrator] Catastrophic failure: {str(e)}")
             return {
                 "analysis_id": f"failed_analysis_{int(time.time())}",
                 "permit_id": permit_data.get("id"),
@@ -159,22 +161,26 @@ class AIOrchestrator:
                 "confidence_score": 0.0,
                 "processing_time": round(processing_time, 2),
                 "error": f"Multi-agent analysis failed: {str(e)}",
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "agents_involved": [],
                 "ai_version": "1.0",
-                # Required fields with empty defaults
+                # Required fields with empty defaults to satisfy Pydantic model
                 "executive_summary": {
                     "overall_score": 0.0,
                     "critical_issues": 0,
                     "recommendations": 0,
                     "compliance_level": "not_analyzed",
                     "estimated_completion_time": "Unknown",
-                    "key_findings": ["Analysis failed"],
-                    "next_steps": ["Retry analysis"]
+                    "key_findings": ["Analysis failed due to system error"],
+                    "next_steps": ["Check system logs", "Retry analysis", "Contact support"]
                 },
                 "action_items": [],
                 "citations": {},
-                "completion_roadmap": {},
+                "completion_roadmap": {
+                    "immediate": ["Check error logs"],
+                    "short_term": ["Retry analysis"],
+                    "long_term": ["System optimization"]
+                },
                 "performance_metrics": {
                     "total_processing_time": processing_time,
                     "parallel_phase_time": 0.0,
@@ -188,10 +194,12 @@ class AIOrchestrator:
         Run agent with timeout protection
         """
         try:
-            return await asyncio.wait_for(agent_coroutine, timeout=self.analysis_timeout)
+            return await asyncio.wait_for(agent_coroutine, timeout=self.agent_timeout)
         except asyncio.TimeoutError:
-            return Exception(f"Agent {agent_name} timed out after {self.analysis_timeout} seconds")
+            print(f"[AIOrchestrator] Agent {agent_name} timed out after {self.agent_timeout}s")
+            return Exception(f"Agent {agent_name} timed out after {self.agent_timeout} seconds")
         except Exception as e:
+            print(f"[AIOrchestrator] Agent {agent_name} failed: {str(e)}")
             return Exception(f"Agent {agent_name} failed: {str(e)}")
     
     def _extract_result(self, result, agent_name: str) -> Dict[str, Any]:

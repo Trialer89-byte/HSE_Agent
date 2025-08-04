@@ -55,8 +55,9 @@ class BaseHSEAgent(ABC):
         # Agent configuration
         self.agent_name = self.__class__.__name__
         self.agent_version = "1.1"  # Updated for dynamic search capability
-        self.max_tokens = 4000
+        self.max_tokens = 2048  # Reduced for faster processing
         self.temperature = 0.1  # Low temperature for consistent analysis
+        self.request_timeout = 30  # 30 second timeout for Gemini requests
     
     @abstractmethod
     def get_system_prompt(self) -> str:
@@ -121,18 +122,24 @@ RICHIESTA DA ELABORARE:
 RICORDA: La risposta deve essere un JSON valido senza testo aggiuntivo.
 """
         
-        # Genera response con Gemini
+        # Genera response con Gemini con timeout
         generation_config = genai.types.GenerationConfig(
             temperature=self.temperature,
             max_output_tokens=self.max_tokens,
         )
         
-        # Run in thread pool since Gemini is sync
+        # Run in thread pool since Gemini is sync with timeout
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: self.model.generate_content(full_prompt, generation_config=generation_config)
-        )
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.model.generate_content(full_prompt, generation_config=generation_config)
+                ),
+                timeout=self.request_timeout
+            )
+        except asyncio.TimeoutError:
+            raise Exception(f"Gemini API request timed out after {self.request_timeout} seconds")
         
         # Clean the response to extract JSON
         cleaned_response = self._clean_json_response(response.text)

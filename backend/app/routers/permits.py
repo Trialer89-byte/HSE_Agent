@@ -14,6 +14,8 @@ from app.schemas.work_permit import (
 from app.services.auth_service import get_current_user
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.autogen_orchestrator import AutoGenAIOrchestrator
+from app.services.fast_ai_orchestrator import FastAIOrchestrator
+from app.services.mock_orchestrator import MockOrchestrator
 from app.services.vector_service import VectorService
 from app.core.permissions import require_permission
 from app.core.tenant import enforce_tenant_isolation
@@ -283,18 +285,43 @@ async def analyze_permit_comprehensive(
         # Initialize vector service for dynamic searches
         vector_service = VectorService()
         
-        # Run AutoGen multi-agent analysis with dynamic search capability
-        orchestrator = AutoGenAIOrchestrator()
-        analysis_result = await orchestrator.run_multi_agent_analysis(
-            permit_data=permit.to_dict(),
-            context_documents=relevant_docs,
-            user_context={
-                "tenant_id": current_user.tenant_id,
-                "user_id": current_user.id,
-                "department": current_user.department
-            },
-            vector_service=vector_service  # Enable dynamic document searches
-        )
+        # Choose orchestrator based on request parameter
+        user_context = {
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "department": current_user.department
+        }
+        
+        if analysis_request.orchestrator == "ai":
+            # Use full AI Orchestrator with Gemini
+            print(f"[PermitRouter] Using AI Orchestrator (Gemini) for comprehensive analysis - permit {permit_id}")
+            orchestrator = AIOrchestrator()
+            analysis_result = await orchestrator.run_multi_agent_analysis(
+                permit_data=permit.to_dict(),
+                context_documents=relevant_docs,
+                user_context=user_context,
+                vector_service=vector_service
+            )
+        elif analysis_request.orchestrator == "fast":
+            # Use Fast AI Orchestrator for quick AI analysis
+            print(f"[PermitRouter] Using Fast AI Orchestrator for quick analysis - permit {permit_id}")
+            orchestrator = FastAIOrchestrator()
+            analysis_result = await orchestrator.run_fast_analysis(
+                permit_data=permit.to_dict(),
+                context_documents=relevant_docs,
+                user_context=user_context,
+                vector_service=vector_service
+            )
+        else:  # mock
+            # Use Mock Orchestrator for instant results
+            print(f"[PermitRouter] Using Mock Orchestrator for instant analysis - permit {permit_id}")
+            orchestrator = MockOrchestrator()
+            analysis_result = await orchestrator.run_mock_analysis(
+                permit_data=permit.to_dict(),
+                context_documents=relevant_docs,
+                user_context=user_context,
+                vector_service=vector_service
+            )
         
         # Save analysis results
         permit.ai_analysis = analysis_result

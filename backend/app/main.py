@@ -8,7 +8,7 @@ from datetime import datetime
 
 from app.config.settings import settings
 from app.config.database import Base, engine
-from app.routers import auth, permits
+from app.routers import auth, permits, documents
 from app.middleware.security import SecurityMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.middleware.audit import AuditMiddleware
@@ -86,6 +86,7 @@ app.add_middleware(SecurityMiddleware)
 # Include routers
 app.include_router(auth.router)
 app.include_router(permits.router)
+app.include_router(documents.router)
 
 
 @app.get("/")

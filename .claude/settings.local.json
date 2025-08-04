@@ -10,7 +10,23 @@
       "Bash(copy scriptsinit-database.py backendinit-database-temp.py)",
       "Bash(cp:*)",
       "Bash(python test_weaviate_connection.py:*)",
-      "Bash(docker logs:*)"
+      "Bash(docker logs:*)",
+      "Bash(python test:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(python3:*)",
+      "Bash(py test_citation_fix.py)",
+      "Bash(py test_api_citation.py)",
+      "Bash(pip install:*)",
+      "Bash(py -m pip install:*)",
+      "Bash(py:*)",
+      "Bash(winpty docker exec -it hse-agent-backend-1 python clear_db_analysis.py)",
+      "Bash(find:*)",
+      "Bash(winpty docker exec hse-agent-backend-1 cat //app/app/routers/documents.py)",
+      "Bash(winpty docker exec -it hse-agent-backend-1 ls //app/)",
+      "Bash(.test_auth.ps1)",
+      "Bash(powershell:*)",
+      "Bash(docker restart:*)"
     ],
     "deny": []
   }

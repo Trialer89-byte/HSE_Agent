@@ -43,6 +43,15 @@ FRONTEND DISPLAY:
 OUTPUT: JSON strutturato per frontend con executive summary, action items e citazioni.
 """
     
+    async def analyze(self, permit_data: Dict[str, Any], context_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Perform analysis specific to this agent (required by base class)
+        This method delegates to generate_structured_output for backward compatibility
+        """
+        # For citation agent, we need analysis results from other agents
+        # Since we don't have them in this context, return a basic structure
+        return await self.generate_structured_output({}, context_documents)
+    
     async def generate_structured_output(self, analysis_results: Dict[str, Any], source_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Genera output strutturato finale per il frontend

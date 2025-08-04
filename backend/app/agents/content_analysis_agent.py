@@ -49,26 +49,30 @@ Rispondi SEMPRE in italiano e fornisci suggerimenti pratici e attuabili.
             context_summary = self._prepare_context_summary(context_documents)
             tenant_context = self._get_tenant_context()
             
-            # Phase 2: Detect knowledge gaps and search for additional documents
+            # Phase 2: Detect knowledge gaps and search for additional documents (only if vector service is available)
             knowledge_gaps = self.detect_knowledge_gaps(permit_data, context_documents)
             additional_documents = []
             
-            # Request additional documents based on gaps
-            if knowledge_gaps.get("missing_procedures"):
-                print(f"[{self.agent_name}] Searching for missing procedures: {knowledge_gaps['missing_procedures']}")
-                additional_docs = await self.search_operational_procedures(
-                    procedure_types=knowledge_gaps["missing_procedures"],
-                    work_context=[permit_data.get("work_type", ""), permit_data.get("location", "")]
-                )
-                additional_documents.extend(additional_docs)
-            
-            if knowledge_gaps.get("missing_regulations"):
-                print(f"[{self.agent_name}] Searching for missing regulations: {knowledge_gaps['missing_regulations']}")
-                additional_docs = await self.search_specific_regulations(
-                    regulation_types=knowledge_gaps["missing_regulations"],
-                    keywords=[permit_data.get("work_type", ""), "sicurezza", "protezione"]
-                )
-                additional_documents.extend(additional_docs)
+            # Check if vector service is available before attempting searches
+            if self.vector_service and hasattr(self.vector_service, 'client') and self.vector_service.client:
+                # Request additional documents based on gaps
+                if knowledge_gaps.get("missing_procedures"):
+                    print(f"[{self.agent_name}] Searching for missing procedures: {knowledge_gaps['missing_procedures']}")
+                    additional_docs = await self.search_operational_procedures(
+                        procedure_types=knowledge_gaps["missing_procedures"],
+                        work_context=[permit_data.get("work_type", ""), permit_data.get("location", "")]
+                    )
+                    additional_documents.extend(additional_docs)
+                
+                if knowledge_gaps.get("missing_regulations"):
+                    print(f"[{self.agent_name}] Searching for missing regulations: {knowledge_gaps['missing_regulations']}")
+                    additional_docs = await self.search_specific_regulations(
+                        regulation_types=knowledge_gaps["missing_regulations"],
+                        keywords=[permit_data.get("work_type", ""), "sicurezza", "protezione"]
+                    )
+                    additional_documents.extend(additional_docs)
+            else:
+                print(f"[{self.agent_name}] Vector service unavailable, skipping additional document searches")
             
             # Combine all available documents
             all_documents = context_documents + additional_documents

@@ -8,8 +8,9 @@ class SimpleAutoGenHSEAgents:
     Simplified AutoGen HSE agents for testing
     """
     
-    def __init__(self, user_context: Dict[str, Any]):
+    def __init__(self, user_context: Dict[str, Any], vector_service=None):
         self.user_context = user_context
+        self.vector_service = vector_service  # Store for potential future use
         self.llm_config = get_autogen_llm_config()
         self.agents = self._create_simple_agents()
     

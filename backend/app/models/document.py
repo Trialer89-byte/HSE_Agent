@@ -23,6 +23,7 @@ class Document(Base, TimestampMixin, TenantMixin):
     
     # Content & Storage
     file_path = Column(String(500))
+    file_hash = Column(String(64), index=True)  # SHA256 hash of file content
     content_summary = Column(Text)
     vector_id = Column(String(100), index=True)
     

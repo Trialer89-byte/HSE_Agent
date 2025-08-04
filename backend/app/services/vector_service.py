@@ -11,46 +11,73 @@ class VectorService:
     """
     
     def __init__(self):
-        # Initialize Weaviate client with better error handling
-        try:
-            if settings.weaviate_api_key and settings.weaviate_api_key.strip():
-                auth_config = weaviate.AuthApiKey(api_key=settings.weaviate_api_key)
-                self.client = weaviate.Client(
-                    url=settings.weaviate_url,
-                    auth_client_secret=auth_config
-                )
-            else:
-                # Try anonymous access first
-                self.client = weaviate.Client(
-                    url=settings.weaviate_url,
-                    additional_headers={}
-                )
-                
-            # Test connection
-            self.client.schema.get()
-            
-        except Exception as e:
-            print(f"[VectorService] Weaviate connection failed: {str(e)}")
-            print(f"[VectorService] Attempting connection without authentication...")
-            
-            # Fallback: try different connection methods
+        # Initialize Weaviate client with multiple fallback strategies
+        self.client = None
+        connection_strategies = [
+            self._try_anonymous_connection,
+            self._try_api_key_connection,
+            self._try_startup_period_connection,
+            self._try_basic_connection
+        ]
+        
+        for strategy in connection_strategies:
             try:
-                # Try with startup_period to avoid immediate auth checks
-                self.client = weaviate.Client(
-                    url=settings.weaviate_url,
-                    startup_period=10
-                )
-                # Test basic connectivity
-                self.client.is_ready()
-            except Exception as e2:
-                print(f"[VectorService] All connection attempts failed: {str(e2)}")
-                # Set client to None to handle gracefully
-                self.client = None
-                return
+                client = strategy()
+                if client and self._test_connection(client):
+                    self.client = client
+                    print(f"[VectorService] Connected using {strategy.__name__}")
+                    break
+            except Exception as e:
+                print(f"[VectorService] {strategy.__name__} failed: {str(e)}")
+                continue
+        
+        if not self.client:
+            print("[VectorService] All connection strategies failed, operating in offline mode")
+            return
         
         # Ensure schema exists only if client is connected
-        if self.client:
-            self._ensure_schema()
+        self._ensure_schema()
+    
+    def _try_anonymous_connection(self):
+        """Try anonymous connection"""
+        return weaviate.Client(
+            url=settings.weaviate_url,
+            additional_headers={}
+        )
+    
+    def _try_api_key_connection(self):
+        """Try API key connection if key is available"""
+        if not settings.weaviate_api_key or not settings.weaviate_api_key.strip():
+            raise Exception("No API key available")
+        
+        auth_config = weaviate.AuthApiKey(api_key=settings.weaviate_api_key)
+        return weaviate.Client(
+            url=settings.weaviate_url,
+            auth_client_secret=auth_config
+        )
+    
+    def _try_startup_period_connection(self):
+        """Try connection with startup period"""
+        return weaviate.Client(
+            url=settings.weaviate_url,
+            startup_period=10
+        )
+    
+    def _try_basic_connection(self):
+        """Try basic connection without any authentication"""
+        return weaviate.Client(url=settings.weaviate_url)
+    
+    def _test_connection(self, client):
+        """Test if the client connection works"""
+        try:
+            # Try to get schema
+            schema = client.schema.get()
+            # Try to check if ready
+            ready = client.is_ready()
+            return True
+        except Exception as e:
+            print(f"[VectorService] Connection test failed: {str(e)}")
+            return False
     
     def _ensure_schema(self):
         """
@@ -431,4 +458,34 @@ class VectorService:
             
         except Exception as e:
             print(f"Error deleting document chunks: {e}")
+            return False
+    
+    async def update_document_metadata(
+        self, 
+        document_code: str, 
+        tenant_id: int, 
+        metadata: Dict[str, Any]
+    ) -> bool:
+        """
+        Update metadata for all chunks of a document
+        """
+        if not self.client:
+            print("[VectorService] No client available, skipping metadata update")
+            return True  # Return True to avoid blocking operations
+            
+        try:
+            # For now, we'll just log the update request
+            # In a real implementation, you would update the vector store entries
+            print(f"[VectorService] Would update metadata for document {document_code}: {metadata}")
+            
+            # TODO: Implement actual Weaviate update logic when needed
+            # This would involve:
+            # 1. Finding all chunks with the document_code and tenant_id
+            # 2. Updating their metadata fields
+            # 3. Re-indexing if necessary
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error updating document metadata: {e}")
             return False

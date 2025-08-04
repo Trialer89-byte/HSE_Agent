@@ -13,13 +13,14 @@ class AutoGenAIOrchestrator:
     """
     
     def __init__(self):
-        self.analysis_timeout = 180  # 3 minutes for AutoGen conversations
+        self.analysis_timeout = 60  # Reduced to 1 minute for faster response
     
     async def run_multi_agent_analysis(
         self,
         permit_data: Dict[str, Any],
         context_documents: List[Dict[str, Any]],
-        user_context: Dict[str, Any]
+        user_context: Dict[str, Any],
+        vector_service=None
     ) -> Dict[str, Any]:
         """
         Run comprehensive HSE analysis using AutoGen agents
@@ -28,9 +29,11 @@ class AutoGenAIOrchestrator:
         print(f"[AutoGenOrchestrator] Starting AutoGen multi-agent analysis for permit {permit_data.get('id')}")
         
         try:
-            # Initialize AutoGen HSE agents
-            hse_agents = SimpleAutoGenHSEAgents(user_context)
+            # Initialize AutoGen HSE agents with vector service for dynamic searches
+            hse_agents = SimpleAutoGenHSEAgents(user_context, vector_service)
             print(f"[AutoGenOrchestrator] Initialized {len(hse_agents.agents)} AutoGen agents")
+            if vector_service:
+                print(f"[AutoGenOrchestrator] Vector service enabled for dynamic document searches")
             
             # Run analysis with timeout protection
             analysis_task = hse_agents.analyze_permit(permit_data, context_documents)
@@ -77,7 +80,7 @@ class AutoGenAIOrchestrator:
             "analysis_complete": analysis_result.get("analysis_complete", True),
             "confidence_score": analysis_result.get("confidence_score", 0.8),
             "processing_time": analysis_result.get("processing_time", 0.0),
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.utcnow().isoformat(),
             "agents_involved": analysis_result.get("agents_involved", []),
             "ai_version": "AutoGen-1.0",
             
@@ -190,7 +193,7 @@ class AutoGenAIOrchestrator:
             "confidence_score": 0.0,
             "processing_time": round(processing_time, 2),
             "error": f"AutoGen analysis timed out after {self.analysis_timeout} seconds",
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.utcnow().isoformat(),
             "agents_involved": [],
             "ai_version": "AutoGen-1.0",
             
@@ -229,7 +232,7 @@ class AutoGenAIOrchestrator:
             "confidence_score": 0.0,
             "processing_time": round(processing_time, 2),
             "error": f"AutoGen analysis failed: {error_message}",
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.utcnow().isoformat(),
             "agents_involved": [],
             "ai_version": "AutoGen-1.0",
             

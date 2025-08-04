@@ -1,5 +1,8 @@
 from typing import List, Dict, Any, Optional
 import os
+import hashlib
+import json
+import asyncio
 from datetime import datetime
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,6 +14,17 @@ from app.models.document import Document
 from app.services.vector_service import VectorService
 from app.services.storage_service import StorageService
 from app.core.tenant import validate_tenant_limits
+from app.config.settings import settings
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+try:
+    import openai
+except ImportError:
+    openai = None
 
 
 class DocumentService:
@@ -26,16 +40,17 @@ class DocumentService:
     async def upload_document(
         self,
         file: UploadFile,
-        document_code: str,
+        document_code: Optional[str],
         title: str,
         document_type: str,
-        category: str,
+        category: Optional[str],
         tenant_id: int,
         uploaded_by: int,
-        industry_sectors: List[str] = None,
-        authority: str = None,
-        subcategory: str = None,
-        scope: str = "tenant"
+        industry_sectors: Optional[List[str]] = None,
+        authority: Optional[str] = None,
+        subcategory: Optional[str] = None,
+        scope: Optional[str] = None,
+        force_reload: bool = False
     ) -> Document:
         """
         Upload and process a document
@@ -50,6 +65,25 @@ class DocumentService:
                 detail=f"File type {file_extension} not allowed"
             )
         
+        # Calculate file hash
+        file_content = await file.read()
+        file_hash = hashlib.sha256(file_content).hexdigest()
+        await file.seek(0)  # Reset file pointer
+        
+        # Check for duplicate file by hash
+        if not force_reload:
+            existing_by_hash = self.db.query(Document).filter(
+                Document.tenant_id == tenant_id,
+                Document.file_hash == file_hash,
+                Document.is_active == True
+            ).first()
+            
+            if existing_by_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"File already exists as document '{existing_by_hash.title}' (Code: {existing_by_hash.document_code}, Version: {existing_by_hash.version}). Use force_reload=true to re-analyze."
+                )
+        
         # Check tenant limits
         from app.models.tenant import Tenant
         tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -58,6 +92,13 @@ class DocumentService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Document limit reached for tenant"
             )
+        
+        # Generate document_code if not provided
+        if not document_code:
+            # Generate code from title and timestamp
+            base_code = re.sub(r'[^a-zA-Z0-9]', '_', title.lower())[:30]
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            document_code = f"{base_code}_{timestamp}"
         
         # Check if document already exists
         existing_doc = self.db.query(Document).filter(
@@ -81,6 +122,21 @@ class DocumentService:
             # Extract text content
             content = await self._extract_text_content(file, file_extension)
             
+            # Extract metadata using AI if not provided
+            ai_metadata = await self._extract_ai_metadata(content, title, document_type)
+            
+            # Use AI extracted values if not provided
+            if not category:
+                category = ai_metadata.get("category", "general")
+            if not subcategory:
+                subcategory = ai_metadata.get("subcategory")
+            if not authority:
+                authority = ai_metadata.get("authority")
+            if not scope:
+                scope = ai_metadata.get("scope", "tenant")
+            if not industry_sectors:
+                industry_sectors = ai_metadata.get("industry_sectors", [])
+            
             # Create semantic chunks
             chunks = await self._create_semantic_chunks(
                 content, document_type, document_code
@@ -97,6 +153,7 @@ class DocumentService:
                 scope=scope,
                 industry_sectors=industry_sectors or [],
                 file_path=file_path,
+                file_hash=file_hash,
                 content_summary=content[:500] + "..." if len(content) > 500 else content,
                 version=new_version,
                 authority=authority,
@@ -331,6 +388,62 @@ class DocumentService:
         
         return min(score, 1.0)
     
+    async def update_document_metadata(
+        self,
+        document_id: int,
+        tenant_id: int,
+        title: Optional[str] = None,
+        category: Optional[str] = None,
+        subcategory: Optional[str] = None,
+        industry_sectors: Optional[List[str]] = None,
+        authority: Optional[str] = None,
+        scope: Optional[str] = None
+    ) -> Document:
+        """
+        Update document metadata without re-uploading file
+        """
+        document = self.db.query(Document).filter(
+            Document.id == document_id,
+            Document.tenant_id == tenant_id,
+            Document.is_active == True
+        ).first()
+        
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        # Update fields if provided
+        if title is not None:
+            document.title = title
+        if category is not None:
+            document.category = category
+        if subcategory is not None:
+            document.subcategory = subcategory
+        if industry_sectors is not None:
+            document.industry_sectors = industry_sectors
+        if authority is not None:
+            document.authority = authority
+        if scope is not None:
+            document.scope = scope
+        
+        # Update timestamp
+        document.updated_at = datetime.utcnow()
+        
+        self.db.commit()
+        self.db.refresh(document)
+        
+        # Update vector database metadata if title changed
+        if title is not None:
+            await self.vector_service.update_document_metadata(
+                document.document_code, 
+                tenant_id, 
+                {"title": title}
+            )
+        
+        return document
+    
     def get_documents_by_tenant(
         self,
         tenant_id: int,
@@ -354,6 +467,19 @@ class DocumentService:
             query = query.filter(Document.category == category)
         
         return query.offset(offset).limit(limit).all()
+    
+    def get_document_versions(
+        self,
+        document_code: str,
+        tenant_id: int
+    ) -> List[Document]:
+        """
+        Get all versions of a document
+        """
+        return self.db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.document_code == document_code
+        ).order_by(Document.version.desc()).all()
     
     async def delete_document(self, document_id: int, tenant_id: int) -> bool:
         """
@@ -386,3 +512,98 @@ class DocumentService:
         except Exception as e:
             print(f"Error deleting document: {e}")
             return False
+    
+    async def _extract_ai_metadata(
+        self, 
+        content: str, 
+        title: str, 
+        document_type: str
+    ) -> Dict[str, Any]:
+        """
+        Extract document metadata using AI
+        """
+        # Truncate content for AI analysis (first 3000 chars to stay within token limits)
+        analysis_content = content[:3000] + "..." if len(content) > 3000 else content
+        
+        prompt = f"""
+        Analizza il seguente documento e estrai i metadati richiesti.
+
+        TITOLO: {title}
+        TIPO DOCUMENTO: {document_type}
+        
+        CONTENUTO:
+        {analysis_content}
+
+        Estrai e restituisci SOLO un JSON con questa struttura esatta:
+        {{
+            "category": "string - categoria principale del documento (es: sicurezza, ambiente, qualità, formazione, procedure)",
+            "subcategory": "string o null - sottocategoria specifica se applicabile",
+            "authority": "string o null - autorità/ente che ha emesso il documento se identificabile",
+            "scope": "string - 'tenant' se specifico per l'azienda, 'global' se generico/normativo",
+            "industry_sectors": ["array di stringi - settori industriali applicabili (es: edilizia, manifatturiero, chimico, energia)"]
+        }}
+
+        Rispondi SOLO con il JSON, senza altri testi.
+        """
+        
+        try:
+            # Configure AI provider
+            ai_provider = getattr(settings, 'ai_provider', 'gemini').lower()
+            
+            if ai_provider == 'gemini' and genai:
+                # Use Gemini
+                if settings.gemini_api_key:
+                    genai.configure(api_key=settings.gemini_api_key)
+                    model = genai.GenerativeModel(settings.gemini_model or 'gemini-1.5-flash')
+                    
+                    response = await asyncio.create_task(
+                        asyncio.to_thread(model.generate_content, prompt)
+                    )
+                    ai_response = response.text.strip()
+                else:
+                    raise ValueError("GEMINI_API_KEY is required")
+                    
+            elif openai:
+                # Use OpenAI as fallback
+                api_key = settings.openai_api_key or settings.gemini_api_key
+                if not api_key:
+                    raise ValueError("Either OPENAI_API_KEY or GEMINI_API_KEY is required")
+                    
+                client = openai.OpenAI(api_key=api_key)
+                response = client.chat.completions.create(
+                    model=settings.openai_model or "gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+                ai_response = response.choices[0].message.content.strip()
+            else:
+                # Fallback to default values
+                return {
+                    "category": "generale",
+                    "subcategory": None,
+                    "authority": None,
+                    "scope": "tenant",
+                    "industry_sectors": []
+                }
+            
+            # Parse JSON response
+            # Clean response to extract only JSON
+            start_idx = ai_response.find('{')
+            end_idx = ai_response.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = ai_response[start_idx:end_idx+1]
+                metadata = json.loads(json_str)
+                return metadata
+            else:
+                raise ValueError("No valid JSON found in AI response")
+                
+        except Exception as e:
+            print(f"Error extracting AI metadata: {e}")
+            # Return default values on error
+            return {
+                "category": "generale",
+                "subcategory": None,
+                "authority": None,
+                "scope": "tenant",
+                "industry_sectors": []
+            }
