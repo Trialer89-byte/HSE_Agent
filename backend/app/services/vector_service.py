@@ -38,6 +38,14 @@ class VectorService:
         # Ensure schema exists only if client is connected
         self._ensure_schema()
     
+    def _batch_callback(self, results: List[Dict[str, Any]]):
+        """
+        Callback for batch processing to handle errors
+        """
+        for result in results:
+            if 'result' in result and 'errors' in result['result']:
+                print(f"[VectorService] Batch error: {result['result']['errors']}")
+    
     def _try_anonymous_connection(self):
         """Try anonymous connection"""
         return weaviate.Client(
@@ -186,7 +194,7 @@ class VectorService:
         authority: str = None
     ) -> List[str]:
         """
-        Add document chunks to vector database
+        Add document chunks to vector database using batch operations
         """
         if not self.client:
             print("[VectorService] No client available, skipping chunk addition")
@@ -195,34 +203,70 @@ class VectorService:
         chunk_ids = []
         
         try:
-            for i, chunk in enumerate(chunks):
-                # Prepare object data
-                obj_data = {
-                    "document_code": document_code,
-                    "title": title,
-                    "content": chunk.get("content", ""),
-                    "content_chunk": chunk.get("content", ""),
-                    "document_type": document_type,
-                    "category": category,
-                    "industry_sectors": industry_sectors or [],
-                    "tenant_id": tenant_id,
-                    "authority": authority or "",
-                    "ai_keywords": chunk.get("ai_keywords", []),
-                    "relevance_score": chunk.get("relevance_score", 0.0),
-                    "chunk_index": chunk.get("chunk_index", i),
-                    "section_title": chunk.get("section_title", f"Sezione {i+1}")
-                }
+            # Configure batch with optimal settings
+            batch_size = 100  # Process 100 chunks at a time
+            self.client.batch.configure(
+                batch_size=batch_size,
+                dynamic=True,  # Dynamic batching for better performance
+                timeout_retries=3,
+                callback=self._batch_callback
+            )
+            
+            # Prepare all objects for batch insertion
+            successful_chunks = 0
+            failed_chunks = 0
+            
+            with self.client.batch as batch:
+                for i, chunk in enumerate(chunks):
+                    try:
+                        # Prepare object data
+                        obj_data = {
+                            "document_code": document_code,
+                            "title": title,
+                            "content": chunk.get("content", ""),
+                            "content_chunk": chunk.get("content", ""),
+                            "document_type": document_type,
+                            "category": category,
+                            "industry_sectors": industry_sectors or [],
+                            "tenant_id": tenant_id,
+                            "authority": authority or "",
+                            "ai_keywords": chunk.get("ai_keywords", []),
+                            "relevance_score": chunk.get("relevance_score", 0.0),
+                            "chunk_index": chunk.get("chunk_index", i),
+                            "section_title": chunk.get("section_title", f"Sezione {i+1}")
+                        }
+                        
+                        # Add to batch
+                        uuid = batch.add_data_object(
+                            data_object=obj_data,
+                            class_name="HSEDocument"
+                        )
+                        chunk_ids.append(uuid)
+                        successful_chunks += 1
+                        
+                    except Exception as chunk_error:
+                        print(f"[VectorService] Error processing chunk {i}: {chunk_error}")
+                        failed_chunks += 1
+                        # Continue processing other chunks
+                        continue
+                    
+                    # Log progress every 50 chunks
+                    if (i + 1) % 50 == 0:
+                        print(f"[VectorService] Processed {i + 1}/{len(chunks)} chunks (Success: {successful_chunks}, Failed: {failed_chunks})")
                 
-                # Add to Weaviate
-                result = self.client.data_object.create(
-                    data_object=obj_data,
-                    class_name="HSEDocument"
-                )
+                # Final flush happens automatically on context exit
+                print(f"[VectorService] Completed batch processing: {successful_chunks} successful, {failed_chunks} failed out of {len(chunks)} total chunks")
                 
-                chunk_ids.append(result)
+                # Raise error if too many failures
+                if failed_chunks > len(chunks) * 0.1:  # More than 10% failed
+                    raise Exception(f"Too many chunk failures: {failed_chunks}/{len(chunks)}")
                 
         except Exception as e:
             print(f"Error adding document chunks: {e}")
+            # Return partial results if some chunks were successful
+            if chunk_ids:
+                print(f"[VectorService] Returning {len(chunk_ids)} successful chunk IDs despite errors")
+                return chunk_ids
             raise
         
         return chunk_ids
@@ -320,6 +364,12 @@ class VectorService:
                 for item in result["data"]["Get"]["HSEDocument"]:
                     # Filter by threshold
                     score = item["_additional"]["score"]
+                    # Convert score to float if it's a string
+                    if isinstance(score, str):
+                        try:
+                            score = float(score)
+                        except (ValueError, TypeError):
+                            score = 0.0
                     if score >= threshold:
                         documents.append({
                             "document_code": item["document_code"],

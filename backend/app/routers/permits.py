@@ -12,13 +12,13 @@ from app.schemas.work_permit import (
     PermitAnalysisStatusResponse
 )
 from app.services.auth_service import get_current_user
-from app.services.ai_orchestrator import AIOrchestrator
 from app.services.autogen_orchestrator import AutoGenAIOrchestrator
 from app.services.fast_ai_orchestrator import FastAIOrchestrator
 from app.services.mock_orchestrator import MockOrchestrator
 from app.services.vector_service import VectorService
 from app.core.permissions import require_permission
-from app.core.tenant import enforce_tenant_isolation
+from app.core.tenant import enforce_tenant_isolation, tenant_context
+from app.core.tenant_queries import get_tenant_query_manager, tenant_required
 from app.core.audit import AuditService, get_client_ip, get_user_agent
 from fastapi import Request
 
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/v1/permits", tags=["Work Permits"])
 
 @router.post("/", response_model=WorkPermitResponse)
 @require_permission("own.permits.create")
+@tenant_required
 async def create_work_permit(
     permit_data: WorkPermitCreate,
     request: Request,
@@ -37,15 +38,17 @@ async def create_work_permit(
     """
     Crea un nuovo permesso di lavoro
     """
-    # Create work permit
-    work_permit = WorkPermit(
+    # Get tenant-aware query manager
+    query_manager = get_tenant_query_manager(db)
+    
+    # Create work permit with automatic tenant assignment
+    work_permit = query_manager.create(
+        WorkPermit,
         **permit_data.dict(),
-        tenant_id=current_user.tenant_id,
         created_by=current_user.id,
         status="draft"
     )
     
-    db.add(work_permit)
     db.commit()
     db.refresh(work_permit)
     
@@ -292,10 +295,10 @@ async def analyze_permit_comprehensive(
             "department": current_user.department
         }
         
-        if analysis_request.orchestrator == "ai":
-            # Use full AI Orchestrator with Gemini
-            print(f"[PermitRouter] Using AI Orchestrator (Gemini) for comprehensive analysis - permit {permit_id}")
-            orchestrator = AIOrchestrator()
+        if analysis_request.orchestrator == "autogen":
+            # Use AutoGen Orchestrator
+            print(f"[PermitRouter] Using AutoGen Orchestrator for analysis - permit {permit_id}")
+            orchestrator = AutoGenAIOrchestrator()
             analysis_result = await orchestrator.run_multi_agent_analysis(
                 permit_data=permit.to_dict(),
                 context_documents=relevant_docs,
@@ -303,7 +306,7 @@ async def analyze_permit_comprehensive(
                 vector_service=vector_service
             )
         elif analysis_request.orchestrator == "fast":
-            # Use Fast AI Orchestrator for quick AI analysis
+            # Use Fast AI Orchestrator for quick single-call analysis
             print(f"[PermitRouter] Using Fast AI Orchestrator for quick analysis - permit {permit_id}")
             orchestrator = FastAIOrchestrator()
             analysis_result = await orchestrator.run_fast_analysis(

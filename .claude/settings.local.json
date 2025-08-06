@@ -26,7 +26,20 @@
       "Bash(winpty docker exec -it hse-agent-backend-1 ls //app/)",
       "Bash(.test_auth.ps1)",
       "Bash(powershell:*)",
-      "Bash(docker restart:*)"
+      "Bash(docker restart:*)",
+      "Bash(winpty docker exec:*)",
+      "Bash(ls:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npm install:*)",
+      "Bash(docker ps:*)",
+      "Bash(rm:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(yarn --version)",
+      "Bash(npx next:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(docker rm:*)"
     ],
     "deny": []
   }

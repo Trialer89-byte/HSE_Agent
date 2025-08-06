@@ -91,25 +91,18 @@ RICHIESTA:
             }
 
 
-def get_autogen_llm_config() -> Dict[str, Any]:
+def get_autogen_llm_config() -> Optional[Dict[str, Any]]:
     """
-    Get AutoGen LLM configuration for Gemini
+    Get AutoGen LLM configuration - return None to use direct Gemini calls
+    Since AutoGen's LLM integration with Gemini is complex, we'll use direct API calls
     """
-    return {
-        "config_list": [
-            {
-                "model": settings.gemini_model,
-                "api_key": settings.gemini_api_key,
-                "api_type": "gemini",
-                "api_base": None,
-                "api_version": None
-            }
-        ],
-        "temperature": 0.7,
-        "max_tokens": 2000,
-        "timeout": 60,
-        "cache_seed": None  # Disable caching for now
-    }
+    if not settings.gemini_api_key:
+        print("[AutoGen Config] No Gemini API key found")
+        return None
+    
+    # For now, return None to signal that we should use direct Gemini calls
+    # instead of trying to integrate with AutoGen's LLM system
+    return None
 
 
 def create_hse_agent_config(

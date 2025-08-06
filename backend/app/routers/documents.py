@@ -1,6 +1,8 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
+import asyncio
+from datetime import datetime
 
 from app.config.database import get_db
 from app.services.auth_service import get_current_user
@@ -21,9 +23,100 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]
 )
 
+# Global dictionary to track upload progress
+upload_progress: Dict[str, Dict[str, Any]] = {}
 
-@router.post("/upload", response_model=DocumentResponse)
+
+async def process_document_upload(
+    task_id: str,
+    file_content: bytes,
+    file_name: str,
+    document_code: Optional[str],
+    title: str,
+    document_type: str,
+    category: Optional[str],
+    tenant_id: int,
+    uploaded_by: int,
+    industry_sectors: List[str],
+    authority: Optional[str],
+    subcategory: Optional[str],
+    scope: Optional[str],
+    force_reload: bool,
+    db_session: Session
+):
+    """Background task to process document upload"""
+    try:
+        # Update progress
+        upload_progress[task_id]["status"] = "processing"
+        upload_progress[task_id]["progress"] = 10
+        upload_progress[task_id]["message"] = "Processing document..."
+        
+        # Create a file-like object
+        import io
+        from fastapi import UploadFile
+        
+        file_like = io.BytesIO(file_content)
+        upload_file = UploadFile(filename=file_name, file=file_like)
+        
+        # Create document service with progress callback
+        document_service = DocumentService(db_session)
+        
+        # Add progress callback to document service
+        original_add_chunks = document_service.vector_service.add_document_chunks
+        
+        async def add_chunks_with_progress(*args, **kwargs):
+            chunks = args[5] if len(args) > 5 else kwargs.get('chunks', [])
+            total_chunks = len(chunks)
+            
+            # Update progress
+            upload_progress[task_id]["status"] = "vectorizing"
+            upload_progress[task_id]["message"] = f"Creating {total_chunks} vector embeddings..."
+            
+            # Call original method
+            result = await original_add_chunks(*args, **kwargs)
+            
+            # Update completion
+            upload_progress[task_id]["progress"] = 90
+            upload_progress[task_id]["message"] = "Finalizing document..."
+            
+            return result
+        
+        document_service.vector_service.add_document_chunks = add_chunks_with_progress
+        
+        # Process document
+        document = await document_service.upload_document(
+            file=upload_file,
+            document_code=document_code,
+            title=title,
+            document_type=document_type,
+            category=category,
+            tenant_id=tenant_id,
+            uploaded_by=uploaded_by,
+            industry_sectors=industry_sectors,
+            authority=authority,
+            subcategory=subcategory,
+            scope=scope,
+            force_reload=force_reload
+        )
+        
+        # Update success
+        upload_progress[task_id]["status"] = "completed"
+        upload_progress[task_id]["progress"] = 100
+        upload_progress[task_id]["message"] = "Document uploaded successfully"
+        upload_progress[task_id]["document_id"] = document.id
+        upload_progress[task_id]["completed_at"] = datetime.now()
+        
+    except Exception as e:
+        # Update error
+        upload_progress[task_id]["status"] = "failed"
+        upload_progress[task_id]["error"] = str(e)
+        upload_progress[task_id]["message"] = f"Upload failed: {str(e)}"
+        upload_progress[task_id]["completed_at"] = datetime.now()
+
+
+@router.post("/upload")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     document_code: Optional[str] = Form(None),
     title: str = Form(...),
@@ -51,39 +144,81 @@ async def upload_document(
     - **industry_sectors**: Optional comma-separated list of applicable sectors (auto-extracted by AI if not provided)
     - **force_reload**: Force re-analysis even if file hash exists
     """
+    # Generate a unique task ID
+    import uuid
+    task_id = str(uuid.uuid4())
+    
+    # Initialize progress tracking
+    upload_progress[task_id] = {
+        "status": "starting",
+        "progress": 0,
+        "message": "Initializing upload...",
+        "started_at": datetime.now(),
+        "document_id": None,
+        "error": None
+    }
+    
     # Parse industry sectors
     sectors = []
     if industry_sectors:
         sectors = [s.strip() for s in industry_sectors.split(",") if s.strip()]
     
-    # Create document service
-    document_service = DocumentService(db)
+    # Read file content before background task
+    file_content = await file.read()
+    file_name = file.filename
+    await file.seek(0)
     
-    try:
-        document = await document_service.upload_document(
-            file=file,
-            document_code=document_code,
-            title=title,
-            document_type=document_type,
-            category=category,
-            tenant_id=current_user.tenant_id,
-            uploaded_by=current_user.id,
-            industry_sectors=sectors,
-            authority=authority,
-            subcategory=subcategory,
-            scope=scope,
-            force_reload=force_reload
-        )
-        
-        return DocumentResponse.from_orm(document)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
+    # Add background task
+    background_tasks.add_task(
+        process_document_upload,
+        task_id=task_id,
+        file_content=file_content,
+        file_name=file_name,
+        document_code=document_code,
+        title=title,
+        document_type=document_type,
+        category=category,
+        tenant_id=current_user.tenant_id,
+        uploaded_by=current_user.id,
+        industry_sectors=sectors,
+        authority=authority,
+        subcategory=subcategory,
+        scope=scope,
+        force_reload=force_reload,
+        db_session=db
+    )
+    
+    # Return immediately with task ID
+    return {
+        "task_id": task_id,
+        "status": "processing",
+        "message": "Document upload started. Use /api/documents/upload/status/{task_id} to check progress."
+    }
+
+
+@router.get("/upload/status/{task_id}")
+async def get_upload_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Check the status of a document upload task.
+    """
+    if task_id not in upload_progress:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload document: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
         )
+    
+    progress_data = upload_progress[task_id].copy()
+    
+    # Clean up old completed tasks (older than 1 hour)
+    if progress_data.get("completed_at"):
+        elapsed = datetime.now() - progress_data["completed_at"]
+        if elapsed.total_seconds() > 3600:  # 1 hour
+            del upload_progress[task_id]
+    
+    return progress_data
 
 
 @router.get("/", response_model=DocumentListResponse)

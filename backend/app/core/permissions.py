@@ -8,9 +8,13 @@ from app.models.user import User
 # Permission levels and their associated permissions
 PERMISSION_LEVELS = {
     "super_admin": [
-        "system.*",           # Full system access
+        "*",                 # Global wildcard - full access
+        "system.*",          # Full system access
         "tenant.*",          # All tenant management
-        "user.*"             # All user management
+        "user.*",            # All user management
+        "own.*",             # Own resources access
+        "department.*",      # Department access
+        "permits.*"          # All permits access
     ],
     "admin": [
         "tenant.permits.*",   # All permits in tenant
@@ -127,6 +131,13 @@ def require_role(required_role: str):
             return await func(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def require_super_admin():
+    """
+    Decorator to require super admin role for endpoint access
+    """
+    return require_role("super_admin")
 
 
 def check_tenant_access(user: User, resource_tenant_id: int) -> bool:

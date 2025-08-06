@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # Database (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: hse-agent-postgres
+    environment:
+      POSTGRES_DB: hse_agent
+      POSTGRES_USER: hse_user
+      POSTGRES_PASSWORD: hse_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # MinIO (Object Storage)
+  minio:
+    image: minio/minio:latest
+    container_name: hse-agent-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # Redis (Cache)
+  redis:
+    image: redis:7-alpine
+    container_name: hse-agent-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # Weaviate (Vector Database)
+  weaviate:
+    image: semitechnologies/weaviate:1.22.4
+    container_name: hse-agent-weaviate
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      QUERY_DEFAULTS_LIMIT: 20
+      DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
+      ENABLE_MODULES: 'text2vec-transformers'
+      TRANSFORMERS_INFERENCE_API: 'http://transformers:8080'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    ports:
+      - "8080:8080"
+    networks:
+      - hse-network
+    restart: unless-stopped
+    depends_on:
+      - transformers
+
+  # Transformers for Weaviate
+  transformers:
+    image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
+    container_name: hse-agent-transformers
+    environment:
+      ENABLE_CUDA: '0'
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hse-agent-backend
+    environment:
+      - DATABASE_URL=postgresql://hse_user:hse_password@postgres:5432/hse_agent
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_SECURE=false
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-default-secret-key-change-in-production}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-secret-key-change-in-production}
+      - REDIS_URL=redis://redis:6379/0
+      - WEAVIATE_URL=http://weaviate:8080
+      - DEBUG=true
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - minio
+      - redis
+      - weaviate
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_TENANT_MODE: saas
+    container_name: hse-agent-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - INTERNAL_API_URL=http://hse-agent-backend:8000
+      - NEXT_PUBLIC_TENANT_MODE=saas
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+  # Nginx (Reverse Proxy)
+  nginx:
+    image: nginx:alpine
+    container_name: hse-agent-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - hse-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:
+  weaviate_data:
+
+networks:
+  hse-network:
+    driver: bridge

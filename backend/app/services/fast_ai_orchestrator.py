@@ -1,20 +1,28 @@
 from typing import Dict, Any, List
-import asyncio
 import time
+import json
 from datetime import datetime
 
-from app.agents.content_analysis_agent import ContentAnalysisAgent
-from app.agents.risk_analysis_agent import RiskAnalysisAgent
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+from app.config.settings import settings
 
 
 class FastAIOrchestrator:
     """
-    Fast AI Orchestrator - simplified version to avoid blocking
+    Fast AI Orchestrator - Single direct AI call without agents
     """
     
     def __init__(self):
-        self.analysis_timeout = 60  # 60 second total timeout
-        self.agent_timeout = 30     # 30 seconds per agent max
+        # Configure Gemini
+        if genai and settings.gemini_api_key:
+            genai.configure(api_key=settings.gemini_api_key)
+            self.model = genai.GenerativeModel(settings.gemini_model)
+        else:
+            raise ValueError("Gemini API key required for FastAIOrchestrator")
     
     async def run_fast_analysis(
         self,
@@ -24,338 +32,189 @@ class FastAIOrchestrator:
         vector_service=None
     ) -> Dict[str, Any]:
         """
-        Run fast, simplified analysis to avoid blocking
+        Run fast single-call AI analysis without agents
         """
         start_time = time.time()
         print(f"[FastAIOrchestrator] Starting fast analysis for permit {permit_data.get('id')}")
         
         try:
-            # Simple, direct analysis without complex multi-agent coordination
-            analysis_result = await self._run_simple_analysis(
-                permit_data, context_documents, user_context, vector_service
-            )
+            # Prepare context
+            permit_summary = self._format_permit_data(permit_data)
+            documents_summary = self._format_documents(context_documents)
             
-            processing_time = time.time() - start_time
-            analysis_result["processing_time"] = round(processing_time, 2)
+            # Create comprehensive prompt
+            prompt = f"""
+Sei un esperto HSE che deve analizzare rapidamente un permesso di lavoro.
+
+PERMESSO DI LAVORO:
+{permit_summary}
+
+DOCUMENTI DI RIFERIMENTO DISPONIBILI:
+{documents_summary}
+
+Analizza il permesso e fornisci una valutazione rapida ma completa che includa:
+1. Identificazione dei principali rischi
+2. DPI necessari (sii specifico)
+3. Gap di conformità evidenti
+4. Raccomandazioni prioritarie
+
+Rispondi in formato JSON strutturato:
+{{
+    "executive_summary": {{
+        "overall_score": 0.0-1.0,
+        "critical_issues": numero,
+        "recommendations": numero,
+        "compliance_level": "compliant|requires_action|non_compliant",
+        "estimated_completion_time": "tempo stimato (es. 2 giorni, 1 settimana)",
+        "key_findings": ["lista scoperte principali"],
+        "next_steps": ["prossimi passi da fare"]
+    }},
+    "action_items": [
+        {{
+            "id": "ACT_001",
+            "type": "risk_mitigation|dpi_requirement|compliance_gap|content_improvement",
+            "priority": "alta|media|bassa",
+            "title": "titolo breve azione",
+            "description": "descrizione dettagliata",
+            "suggested_action": "azione specifica suggerita",
+            "consequences_if_ignored": "conseguenze se ignorato",
+            "references": ["riferimenti normativi"],
+            "estimated_effort": "sforzo stimato",
+            "responsible_role": "ruolo responsabile",
+            "frontend_display": {{
+                "color": "red|orange|blue",
+                "icon": "alert-triangle|shield-check|file-text",
+                "category": "categoria display"
+            }}
+        }}
+    ],
+    "citations": {{
+        "normative_framework": [],
+        "company_procedures": []
+    }},
+    "completion_roadmap": {{
+        "immediate_actions": ["azioni immediate"],
+        "short_term_actions": ["azioni breve termine"],
+        "medium_term_actions": ["azioni medio termine"],
+        "success_metrics": ["metriche di successo"],
+        "review_checkpoints": ["checkpoint di verifica"]
+    }},
+    "performance_metrics": {{
+        "analysis_depth": "fast",
+        "agents_used": 0,
+        "documents_analyzed": numero
+    }},
+    "analysis_complete": true,
+    "confidence_score": 0.0-1.0
+}}
+
+IMPORTANTE: Sii specifico e pratico nelle raccomandazioni. Non fare riferimenti a normative non presenti nei documenti forniti.
+"""
             
-            print(f"[FastAIOrchestrator] Fast analysis completed in {processing_time:.2f}s")
-            return analysis_result
+            # Call Gemini directly
+            response = self.model.generate_content(prompt)
             
-        except Exception as e:
-            processing_time = time.time() - start_time
-            print(f"[FastAIOrchestrator] Fast analysis failed after {processing_time:.2f}s: {str(e)}")
-            return self._create_emergency_response(permit_data, processing_time, str(e))
-    
-    async def _run_simple_analysis(
-        self,
-        permit_data: Dict[str, Any],
-        context_documents: List[Dict[str, Any]],
-        user_context: Dict[str, Any],
-        vector_service
-    ) -> Dict[str, Any]:
-        """
-        Run simplified analysis with just one agent to avoid complexity
-        """
-        # Use only content analysis agent for speed
-        content_agent = ContentAnalysisAgent(user_context, vector_service)
-        
-        try:
-            # Run single agent with timeout
-            content_result = await asyncio.wait_for(
-                content_agent.analyze(permit_data, context_documents),
-                timeout=self.agent_timeout
-            )
-            
-            # Create structured response based on single agent result
-            return self._structure_fast_response(permit_data, content_result, user_context)
-            
-        except asyncio.TimeoutError:
-            print(f"[FastAIOrchestrator] Content agent timed out after {self.agent_timeout}s")
-            return self._create_simple_fallback_response(permit_data, user_context)
-        except Exception as e:
-            print(f"[FastAIOrchestrator] Content agent failed: {str(e)}")
-            return self._create_simple_fallback_response(permit_data, user_context)
-    
-    def _structure_fast_response(
-        self,
-        permit_data: Dict[str, Any],
-        content_result: Dict[str, Any],
-        user_context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Structure response from single agent analysis
-        """
-        work_type = permit_data.get("work_type", "generale")
-        title = permit_data.get("title", "Permesso di lavoro")
-        
-        # Extract insights from content analysis
-        content_quality = content_result.get("content_quality", {})
-        missing_fields = content_result.get("missing_fields", [])
-        improvements = content_result.get("improvement_suggestions", [])
-        
-        # Generate basic risk assessment based on work type
-        basic_risks = self._get_basic_risks_by_work_type(work_type)
-        basic_dpi = self._get_basic_dpi_by_work_type(work_type)
-        
-        # Create action items from analysis
-        action_items = []
-        for i, improvement in enumerate(improvements[:5]):  # Max 5 items
-            action_items.append({
-                "id": f"action_{i+1}",
-                "type": "improvement",
-                "priority": "media",
-                "title": improvement.get("suggested_improvement", f"Miglioramento {i+1}"),
-                "description": improvement.get("rationale", "Miglioramento suggerito dall'analisi"),
-                "suggested_action": improvement.get("suggested_improvement", "Applicare miglioramento"),
-                "consequences_if_ignored": "Potenziale riduzione della sicurezza",
-                "references": [],
-                "estimated_effort": "1-2 ore",
-                "responsible_role": "Responsabile HSE",
-                "frontend_display": {
-                    "icon": "warning",
-                    "color": "orange"
+            # Parse response
+            try:
+                result = json.loads(self._clean_json_response(response.text))
+            except json.JSONDecodeError:
+                # Fallback structure if parsing fails
+                result = {
+                    "executive_summary": {
+                        "overall_score": 0.5,
+                        "critical_issues": 0,
+                        "recommendations": 1,
+                        "compliance_level": "requires_action",
+                        "estimated_completion_time": "Da determinare",
+                        "key_findings": ["Analisi rapida completata"],
+                        "next_steps": ["Verificare i risultati dell'analisi"]
+                    },
+                    "action_items": [],
+                    "citations": {
+                        "normative_framework": [],
+                        "company_procedures": []
+                    },
+                    "completion_roadmap": {
+                        "immediate_actions": [],
+                        "short_term_actions": [],
+                        "medium_term_actions": [],
+                        "success_metrics": [],
+                        "review_checkpoints": []
+                    },
+                    "performance_metrics": {
+                        "analysis_depth": "fast",
+                        "agents_used": 0,
+                        "documents_analyzed": len(context_documents)
+                    },
+                    "analysis_complete": True,
+                    "confidence_score": 0.5,
+                    "error": "Failed to parse AI response"
                 }
+            
+            # Add metadata
+            processing_time = time.time() - start_time
+            result.update({
+                "analysis_id": f"fast_{permit_data.get('id')}_{int(time.time())}",
+                "permit_id": permit_data.get('id'),
+                "processing_time": processing_time,
+                "timestamp": datetime.utcnow().isoformat(),
+                "ai_version": "fast_1.0",
+                "agents_involved": ["FastAI"]
             })
-        
-        return {
-            "analysis_id": f"fast_analysis_{int(time.time())}_{user_context.get('user_id', 'unknown')}",
-            "permit_id": permit_data.get("id"),
-            "analysis_complete": True,
-            "confidence_score": content_result.get("confidence_score", 0.75),
-            "timestamp": datetime.utcnow().isoformat(),
-            "agents_involved": ["ContentAnalysisAgent"],
-            "ai_version": "FastAI-1.0",
             
-            # Required Pydantic fields
-            "executive_summary": {
-                "overall_score": content_quality.get("overall_score", 0.7),
-                "critical_issues": len([mf for mf in missing_fields if mf.get("criticality") == "alta"]),
-                "recommendations": len(improvements),
-                "compliance_level": "da_verificare",
-                "estimated_completion_time": "2-4 ore",
-                "key_findings": [
-                    f"Analisi completata per {title}",
-                    f"Tipo lavoro: {work_type}",
-                    f"Qualità contenuto: {content_quality.get('overall_score', 0.7):.1f}/1.0"
-                ],
-                "next_steps": [
-                    "Implementare miglioramenti suggeriti",
-                    "Verificare DPI richiesti",
-                    "Completare campi mancanti"
-                ]
-            },
+            print(f"[FastAIOrchestrator] Analysis completed in {processing_time:.2f}s")
+            return result
             
-            "action_items": action_items,
-            
-            "citations": {
-                "normative": [],
-                "procedures": [],
-                "guidelines": []
-            },
-            
-            "completion_roadmap": {
-                "immediate": [
-                    "Verificare completezza informazioni",
-                    "Controllare DPI richiesti"
-                ],
-                "short_term": [
-                    "Implementare miglioramenti",
-                    "Formazione specifica"
-                ],
-                "long_term": [
-                    "Monitoraggio continuo",
-                    "Aggiornamento procedure"
-                ]
-            },
-            
-            "performance_metrics": {
-                "total_processing_time": 0.0,  # Will be set by caller
-                "agents_successful": 1,
-                "agents_total": 1,
-                "analysis_method": "Fast Single Agent"
-            },
-            
-            # Enhanced features data
-            "content_improvements": content_result,
-            "risk_assessment": {
-                "identified_risks": basic_risks,
-                "risk_level": "medio",
-                "analysis_complete": True
-            },
-            "dpi_recommendations": {
-                "required_dpi": basic_dpi,
-                "analysis_complete": True
-            },
-            "compliance_check": {
-                "compliance_level": "parziale",
-                "missing_requirements": [mf.get("field_name", "Campo") for mf in missing_fields],
-                "analysis_complete": True
+        except Exception as e:
+            print(f"[FastAIOrchestrator] Error: {str(e)}")
+            return {
+                "analysis_complete": False,
+                "error": str(e),
+                "confidence_score": 0.0,
+                "processing_time": time.time() - start_time,
+                "timestamp": datetime.utcnow().isoformat()
             }
-        }
     
-    def _get_basic_risks_by_work_type(self, work_type: str) -> List[Dict[str, Any]]:
-        """
-        Get basic risks based on work type
-        """
-        risk_mappings = {
-            "chimico": [
-                {"risk": "Esposizione sostanze chimiche", "level": "alto"},
-                {"risk": "Contaminazione", "level": "medio"},
-                {"risk": "Reazioni pericolose", "level": "alto"}
-            ],
-            "meccanico": [
-                {"risk": "Lesioni da attrezzature", "level": "medio"},
-                {"risk": "Energia residua", "level": "alto"},
-                {"risk": "Parti in movimento", "level": "medio"}
-            ],
-            "elettrico": [
-                {"risk": "Elettrocuzione", "level": "alto"},
-                {"risk": "Arco elettrico", "level": "alto"},
-                {"risk": "Incendio", "level": "medio"}
-            ],
-            "scavo": [
-                {"risk": "Cedimento scavo", "level": "alto"},
-                {"risk": "Servizi interrati", "level": "alto"},
-                {"risk": "Caduta materiali", "level": "medio"}
-            ]
-        }
+    def _format_permit_data(self, permit_data: Dict[str, Any]) -> str:
+        """Format permit data for prompt"""
+        return f"""
+- ID: {permit_data.get('id')}
+- Titolo: {permit_data.get('title')}
+- Descrizione: {permit_data.get('description')}
+- Tipo lavoro: {permit_data.get('work_type')}
+- Ubicazione: {permit_data.get('location')}
+- Durata: {permit_data.get('duration_hours')} ore
+- DPI già specificati: {', '.join(permit_data.get('dpi_required', []))}
+"""
+    
+    def _format_documents(self, documents: List[Dict[str, Any]]) -> str:
+        """Format documents for prompt"""
+        if not documents:
+            return "Nessun documento di riferimento disponibile"
         
-        return risk_mappings.get(work_type, [
-            {"risk": "Rischi generali sul lavoro", "level": "medio"},
-            {"risk": "Lesioni personali", "level": "medio"}
-        ])
+        formatted = ""
+        for i, doc in enumerate(documents[:5], 1):  # Limit to top 5
+            formatted += f"""
+{i}. {doc.get('title', 'Documento senza titolo')}
+   Tipo: {doc.get('document_type', 'N/A')}
+   Contenuto: {doc.get('content', '')[:200]}...
+"""
+        return formatted
     
-    def _get_basic_dpi_by_work_type(self, work_type: str) -> List[str]:
-        """
-        Get basic DPI requirements based on work type
-        """
-        dpi_mappings = {
-            "chimico": ["Tuta chimica", "Respiratore", "Guanti chimici", "Occhiali", "Calzature antiscivolo"],
-            "meccanico": ["Casco", "Guanti anticorte", "Scarpe antinfortunistiche", "Occhiali"],
-            "elettrico": ["Casco dielettrico", "Guanti dielettrici", "Scarpe isolanti", "Tester"],
-            "scavo": ["Casco", "Imbracatura", "Scarpe antinfortunistiche", "Giubbotto alta visibilità"],
-            "edile": ["Casco", "Imbracatura anticaduta", "Scarpe antinfortunistiche", "Guanti"],
-        }
+    def _clean_json_response(self, response_text: str) -> str:
+        """Clean response to extract JSON"""
+        import re
         
-        return dpi_mappings.get(work_type, ["Casco", "Guanti", "Scarpe antinfortunistiche", "Occhiali"])
-    
-    def _create_simple_fallback_response(
-        self,
-        permit_data: Dict[str, Any],
-        user_context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Create simple fallback response when analysis fails
-        """
-        work_type = permit_data.get("work_type", "generale")
-        basic_risks = self._get_basic_risks_by_work_type(work_type)
-        basic_dpi = self._get_basic_dpi_by_work_type(work_type)
+        # Remove markdown code blocks
+        response_text = re.sub(r'```json\s*', '', response_text)
+        response_text = re.sub(r'```\s*$', '', response_text)
+        response_text = response_text.strip()
         
-        return {
-            "analysis_id": f"fallback_{int(time.time())}_{user_context.get('user_id', 'unknown')}",
-            "permit_id": permit_data.get("id"),
-            "analysis_complete": True,
-            "confidence_score": 0.5,
-            "timestamp": datetime.utcnow().isoformat(),
-            "agents_involved": ["FallbackAnalysis"],
-            "ai_version": "FastAI-Fallback-1.0",
-            
-            "executive_summary": {
-                "overall_score": 0.5,
-                "critical_issues": 1,
-                "recommendations": 3,
-                "compliance_level": "da_verificare",
-                "estimated_completion_time": "2-4 ore",
-                "key_findings": [
-                    f"Analisi di base per tipo lavoro: {work_type}",
-                    "Analisi dettagliata non disponibile",
-                    "Raccomandazioni standard applicate"
-                ],
-                "next_steps": [
-                    "Verificare manualmente i requisiti",
-                    "Consultare procedure specifiche",
-                    "Riprovare analisi dettagliata"
-                ]
-            },
-            
-            "action_items": [
-                {
-                    "id": "fallback_1",
-                    "type": "verification",
-                    "priority": "alta",
-                    "title": "Verifica manuale requisiti",
-                    "description": "Verifica manuale dei requisiti di sicurezza per questo tipo di lavoro",
-                    "suggested_action": "Consultare procedure standard",
-                    "consequences_if_ignored": "Possibili rischi non identificati",
-                    "references": [],
-                    "estimated_effort": "30 minuti",
-                    "responsible_role": "Responsabile HSE",
-                    "frontend_display": {"icon": "check", "color": "blue"}
-                }
-            ],
-            
-            "citations": {"normative": [], "procedures": [], "guidelines": []},
-            "completion_roadmap": {
-                "immediate": ["Verifica manuale", "Consultare procedure"],
-                "short_term": ["Analisi dettagliata", "Formazione"],
-                "long_term": ["Miglioramento processo"]
-            },
-            
-            "performance_metrics": {
-                "total_processing_time": 0.0,
-                "agents_successful": 0,
-                "agents_total": 1,
-                "analysis_method": "Fallback Analysis"
-            },
-            
-            "content_improvements": {"analysis_complete": False, "confidence_score": 0.0},
-            "risk_assessment": {"identified_risks": basic_risks, "analysis_complete": True},
-            "dpi_recommendations": {"required_dpi": basic_dpi, "analysis_complete": True},
-            "compliance_check": {"compliance_level": "da_verificare", "analysis_complete": False}
-        }
-    
-    def _create_emergency_response(
-        self,
-        permit_data: Dict[str, Any],
-        processing_time: float,
-        error_message: str
-    ) -> Dict[str, Any]:
-        """
-        Create emergency response when everything fails
-        """
-        return {
-            "analysis_id": f"emergency_{int(time.time())}",
-            "permit_id": permit_data.get("id"),
-            "analysis_complete": False,
-            "confidence_score": 0.0,
-            "processing_time": round(processing_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
-            "agents_involved": [],
-            "ai_version": "Emergency-1.0",
-            "error": f"Emergency fallback: {error_message}",
-            
-            "executive_summary": {
-                "overall_score": 0.0,
-                "critical_issues": 1,
-                "recommendations": 1,
-                "compliance_level": "errore",
-                "estimated_completion_time": "Unknown",
-                "key_findings": ["Analisi fallita - utilizzare verifica manuale"],
-                "next_steps": ["Contattare supporto tecnico", "Verifica manuale", "Riprovare più tardi"]
-            },
-            
-            "action_items": [],
-            "citations": {},
-            "completion_roadmap": {
-                "immediate": ["Verifica manuale"],
-                "short_term": ["Riprovare analisi"],
-                "long_term": ["Miglioramento sistema"]
-            },
-            
-            "performance_metrics": {
-                "total_processing_time": processing_time,
-                "agents_successful": 0,
-                "agents_total": 1,
-                "analysis_method": "Emergency Fallback"
-            }
-        }
+        # Find JSON bounds
+        start_idx = response_text.find('{')
+        end_idx = response_text.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            return response_text[start_idx:end_idx + 1]
+        
+        return response_text

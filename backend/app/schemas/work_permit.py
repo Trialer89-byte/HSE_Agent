@@ -130,11 +130,11 @@ class PermitAnalysisRequest(BaseModel):
     force_reanalysis: bool = Field(default=False, description="Forza ri-analisi anche se già esistente")
     include_draft_documents: bool = Field(default=False, description="Includi documenti in bozza")
     analysis_scope: List[str] = Field(default=["content", "risk", "compliance", "dpi"], description="Ambiti di analisi")
-    orchestrator: str = Field(default="ai", description="Tipo di orchestratore: 'ai' per Gemini reale, 'fast' per AI veloce, 'mock' per simulazione")
+    orchestrator: str = Field(default="autogen", description="Tipo di orchestratore: 'autogen' per AutoGen agents, 'fast' per analisi veloce diretta, 'mock' per simulazione")
     
     @validator('orchestrator')
     def validate_orchestrator(cls, v):
-        allowed_orchestrators = ['ai', 'fast', 'mock']
+        allowed_orchestrators = ['autogen', 'fast', 'mock']
         if v not in allowed_orchestrators:
             raise ValueError(f'Orchestrator must be one of: {allowed_orchestrators}')
         return v

@@ -2,8 +2,10 @@ from datetime import datetime, timedelta
 from typing import Any, Union, Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 
@@ -92,4 +94,52 @@ def decode_token(token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload"
+        )
+
+
+# HTTP Bearer security scheme
+security = HTTPBearer()
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(lambda: None)  # Placeholder - needs proper dependency
+):
+    """
+    Get current user from JWT token
+    """
+    try:
+        # Decode token
+        payload = decode_token(credentials.credentials)
+        user_id: str = payload.get("sub")
+        tenant_id: int = payload.get("tenant_id")
+        
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+        
+        # Import here to avoid circular import
+        from app.models.user import User
+        
+        # Get user from database
+        user = db.query(User).filter(
+            User.id == int(user_id),
+            User.tenant_id == tenant_id,
+            User.is_active == True
+        ).first()
+        
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive"
+            )
+        
+        return user
+        
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user ID in token"
         )

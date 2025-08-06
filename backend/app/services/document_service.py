@@ -6,9 +6,13 @@ import asyncio
 from datetime import datetime
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
-import PyPDF2
+try:
+    import pypdf
+except ImportError:
+    import PyPDF2 as pypdf
 import docx
 import re
+from contextlib import asynccontextmanager
 
 from app.models.document import Document
 from app.services.vector_service import VectorService
@@ -165,18 +169,30 @@ class DocumentService:
             self.db.commit()
             self.db.refresh(document)
             
-            # Add chunks to vector database
-            chunk_ids = await self.vector_service.add_document_chunks(
-                document_id=document.id,
-                document_code=document_code,
-                title=title,
-                chunks=chunks,
-                document_type=document_type,
-                category=category,
-                tenant_id=tenant_id,
-                industry_sectors=industry_sectors,
-                authority=authority
-            )
+            # Add chunks to vector database with timeout
+            try:
+                chunk_ids = await asyncio.wait_for(
+                    self.vector_service.add_document_chunks(
+                        document_id=document.id,
+                        document_code=document_code,
+                        title=title,
+                        chunks=chunks,
+                        document_type=document_type,
+                        category=category,
+                        tenant_id=tenant_id,
+                        industry_sectors=industry_sectors,
+                        authority=authority
+                    ),
+                    timeout=300.0  # 5 minutes timeout for vector processing
+                )
+            except asyncio.TimeoutError:
+                # Clean up on timeout
+                document.is_active = False
+                self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                    detail="Document processing timed out. The document is too large or complex."
+                )
             
             # Store first chunk ID as vector_id
             if chunk_ids:
@@ -203,7 +219,7 @@ class DocumentService:
         try:
             if file_extension == '.pdf':
                 # Extract from PDF
-                pdf_reader = PyPDF2.PdfReader(file.file)
+                pdf_reader = pypdf.PdfReader(file.file)
                 for page in pdf_reader.pages:
                     content += page.extract_text() + "\n"
             
@@ -235,7 +251,7 @@ class DocumentService:
         document_code: str
     ) -> List[Dict[str, Any]]:
         """
-        Create semantic chunks based on document type
+        Create semantic chunks based on document type with parallel processing
         """
         chunks = []
         
@@ -249,48 +265,90 @@ class DocumentService:
             # Default chunking
             chunks = self._default_chunker(content, document_code)
         
-        # Enrich chunks with AI keywords
-        for i, chunk in enumerate(chunks):
+        # Process chunks in parallel for keyword extraction and scoring
+        import asyncio
+        
+        async def enrich_chunk(chunk, index):
+            """Enrich a single chunk with keywords and relevance score"""
             chunk["ai_keywords"] = self._extract_keywords(chunk["content"])
             chunk["relevance_score"] = self._calculate_relevance_score(chunk["content"])
+            return chunk
         
-        return chunks
+        # Process chunks in batches to avoid overwhelming the system
+        batch_size = 10
+        enriched_chunks = []
+        
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            tasks = [enrich_chunk(chunk, idx) for idx, chunk in enumerate(batch, start=i)]
+            batch_results = await asyncio.gather(*tasks)
+            enriched_chunks.extend(batch_results)
+        
+        return enriched_chunks
     
     def _legal_document_chunker(self, content: str, document_code: str) -> List[Dict[str, Any]]:
         """
-        Chunk legal documents by articles and sections
+        Chunk legal documents by articles and sections with optimized sizes
         """
         chunks = []
+        max_chunk_words = 1500  # Increased for better context
         
         # Split by articles
         article_pattern = r'(Art\.\s*\d+|Articolo\s+\d+)'
         sections = re.split(article_pattern, content, flags=re.IGNORECASE)
         
         current_section = ""
+        accumulated_content = ""
+        accumulated_sections = []
+        
         for i, section in enumerate(sections):
             if re.match(article_pattern, section, re.IGNORECASE):
+                # If we have accumulated content, save it as a chunk
+                if accumulated_content and len(accumulated_content.split()) > 100:
+                    chunks.append({
+                        "content": accumulated_content.strip(),
+                        "section_title": ", ".join(accumulated_sections),
+                        "chunk_index": len(chunks),
+                        "word_count": len(accumulated_content.split())
+                    })
+                    accumulated_content = ""
+                    accumulated_sections = []
+                
                 current_section = section.strip()
             elif section.strip() and current_section:
-                chunk_content = f"{current_section}\n{section.strip()}"
-                if len(chunk_content) > 50:  # Skip very short chunks
+                new_content = f"{current_section}\n{section.strip()}"
+                
+                # Check if adding this section would exceed max size
+                if accumulated_content and (len(accumulated_content.split()) + len(new_content.split()) > max_chunk_words):
+                    # Save current accumulation as chunk
                     chunks.append({
-                        "content": chunk_content,
-                        "section_title": current_section,
+                        "content": accumulated_content.strip(),
+                        "section_title": ", ".join(accumulated_sections),
                         "chunk_index": len(chunks),
-                        "word_count": len(chunk_content.split())
+                        "word_count": len(accumulated_content.split())
                     })
+                    accumulated_content = new_content
+                    accumulated_sections = [current_section]
+                else:
+                    # Accumulate content
+                    if accumulated_content:
+                        accumulated_content += "\n\n" + new_content
+                    else:
+                        accumulated_content = new_content
+                    accumulated_sections.append(current_section)
         
-        # If no articles found, use paragraph chunking
+        # Don't forget the last chunk
+        if accumulated_content and len(accumulated_content.split()) > 100:
+            chunks.append({
+                "content": accumulated_content.strip(),
+                "section_title": ", ".join(accumulated_sections),
+                "chunk_index": len(chunks),
+                "word_count": len(accumulated_content.split())
+            })
+        
+        # If no articles found, use optimized paragraph chunking
         if not chunks:
-            paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-            for i, paragraph in enumerate(paragraphs):
-                if len(paragraph) > 100:  # Only substantial paragraphs
-                    chunks.append({
-                        "content": paragraph,
-                        "section_title": f"Paragrafo {i+1}",
-                        "chunk_index": i,
-                        "word_count": len(paragraph.split())
-                    })
+            return self._default_chunker(content, document_code)
         
         return chunks
     
@@ -326,11 +384,11 @@ class DocumentService:
     
     def _default_chunker(self, content: str, document_code: str) -> List[Dict[str, Any]]:
         """
-        Default chunking strategy
+        Default chunking strategy with optimized sizes
         """
         chunks = []
-        max_chunk_size = 1000
-        overlap = 100
+        max_chunk_size = 1500  # Increased from 1000
+        overlap = 200  # Increased from 100 for better context
         
         words = content.split()
         
@@ -338,7 +396,7 @@ class DocumentService:
             chunk_words = words[i:i + max_chunk_size]
             chunk_content = ' '.join(chunk_words)
             
-            if len(chunk_content.strip()) > 50:
+            if len(chunk_content.strip()) > 100:  # Increased minimum size
                 chunks.append({
                     "content": chunk_content,
                     "section_title": f"Sezione {len(chunks) + 1}",
