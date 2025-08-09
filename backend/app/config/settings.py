@@ -47,7 +47,12 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-1.5-pro"
     
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000"]
+    cors_origins: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001"
+    ]
     
     # Rate Limiting
     rate_limit_per_minute: int = 60

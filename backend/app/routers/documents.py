@@ -18,7 +18,7 @@ from app.schemas.document import (
 
 
 router = APIRouter(
-    prefix="/api/documents",
+    prefix="/api/v1/documents",
     tags=["documents"],
     dependencies=[Depends(get_current_user)]
 )

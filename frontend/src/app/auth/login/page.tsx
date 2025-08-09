@@ -2,49 +2,61 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTenantStore } from '@/stores/tenant-store';
-import { useAuthStore } from '@/stores/auth-store';
-import { TenantBranding } from '@/components/tenant/tenant-branding';
+import { apiCall } from '@/config/api';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [tenantDomain, setTenantDomain] = useState('');
   const router = useRouter();
-  
-  const { tenant } = useTenantStore();
-  const { login, isLoading, error, clearError } = useAuthStore();
 
   useEffect(() => {
-    // If no tenant is selected, redirect to tenant selection
-    if (!tenant) {
+    // Get tenant domain from localStorage
+    const domain = localStorage.getItem('tenant_domain');
+    if (!domain) {
       router.push('/tenant-select');
       return;
     }
-
-    // Clear any existing errors when component mounts
-    clearError();
-  }, [tenant, router, clearError]);
+    setTenantDomain(domain);
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim() || !tenant) return;
+    if (!username.trim() || !password.trim()) return;
+
+    setIsLoading(true);
+    setError('');
 
     try {
-      await login({
-        username: username.trim(),
-        password: password.trim(),
-        tenant_domain: tenant.domain
+      const response = await apiCall('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim(),
+          tenant_domain: tenantDomain
+        }),
       });
       
-      // Redirect to dashboard on successful login
-      router.push('/dashboard');
+      if (response.access_token) {
+        // Store auth data
+        localStorage.setItem('auth_token', response.access_token);
+        localStorage.setItem('user', JSON.stringify(response.user));
+        
+        // Redirect to dashboard
+        router.push('/dashboard');
+      } else {
+        throw new Error('Invalid response from server');
+      }
     } catch (err) {
-      // Error is handled by the store
-      console.error('Login failed:', err);
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (!tenant) {
+  if (!tenantDomain) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -58,14 +70,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <TenantBranding tenant={tenant} />
-        
-        <div className="text-center mt-6">
-          <h2 className="text-3xl font-bold text-gray-900">
-            Welcome to {tenant.display_name}
-          </h2>
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-900">HSE Management System</h1>
           <p className="mt-2 text-sm text-gray-600">
-            Sign in to your account
+            Sign in to {tenantDomain}
           </p>
         </div>
 
@@ -128,7 +136,11 @@ export default function LoginPage() {
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => router.push('/tenant-select')}
+                onClick={() => {
+                  localStorage.removeItem('tenant_domain');
+                  localStorage.removeItem('tenant_id');
+                  router.push('/tenant-select');
+                }}
                 className="text-sm text-blue-600 hover:text-blue-500"
               >
                 Switch organization
@@ -138,16 +150,14 @@ export default function LoginPage() {
         </div>
 
         {/* Demo credentials for development */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-md p-4">
-            <h3 className="text-sm font-medium text-yellow-800">Demo Credentials</h3>
-            <div className="mt-2 text-sm text-yellow-700">
-              <p><strong>Admin:</strong> admin_{tenant.display_name} / Admin123!</p>
-              <p><strong>User:</strong> user_{tenant.display_name} / User123!</p>
-              <p><strong>Viewer:</strong> viewer_{tenant.display_name} / Viewer123!</p>
-            </div>
+        <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-md p-4">
+          <h3 className="text-sm font-medium text-yellow-800">Demo Credentials</h3>
+          <div className="mt-2 text-sm text-yellow-700">
+            <p><strong>Admin:</strong> admin / Admin123!</p>
+            <p><strong>User:</strong> user / User123!</p>
+            <p><strong>Domain:</strong> demo.hse-system.com</p>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

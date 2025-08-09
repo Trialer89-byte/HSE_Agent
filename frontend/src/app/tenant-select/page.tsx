@@ -2,51 +2,71 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTenantStore } from '@/stores/tenant-store';
+import { apiCall } from '@/config/api';
 
-export default function TenantSelectPage() {
+export default function TenantSelectSimplePage() {
   const [domain, setDomain] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const router = useRouter();
-  
-  const { loadTenantByDomain, validateTenantAccess } = useTenantStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!domain.trim()) return;
 
     setIsLoading(true);
-    setError('');
+    setMessage('');
 
     try {
-      // First validate tenant access
-      const isValid = await validateTenantAccess(domain);
+      // Use the consolidated API call function
+      const data = await apiCall(`/api/v1/public/tenants/validate?domain=${encodeURIComponent(domain)}`);
       
-      if (!isValid) {
-        setError('Tenant not found or inactive');
-        return;
+      if (data.valid) {
+        // Store tenant info in localStorage directly
+        localStorage.setItem('tenant_domain', domain);
+        localStorage.setItem('tenant_id', data.tenant_id?.toString() || '');
+        
+        setMessage(`Success! Found tenant: ${data.display_name}`);
+        
+        // Redirect after a brief delay
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 1000);
+      } else {
+        setMessage('Tenant not found or inactive');
       }
-
-      // Load tenant info
-      await loadTenantByDomain(domain);
-      
-      // Redirect to login or dashboard
-      router.push('/auth/login');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tenant');
+    } catch (error) {
+      console.error('API Error:', error);
+      setMessage(error instanceof Error ? error.message : 'Failed to validate tenant');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDemoTenant = async () => {
+  const handleDemo = async () => {
     setIsLoading(true);
+    setMessage('');
+    
     try {
-      await loadTenantByDomain('demo.hse-system.com');
-      router.push('/auth/login');
-    } catch {
-      setError('Demo tenant not available');
+      const demoDomain = 'demo.hse-system.com';
+      // Use the consolidated API call function
+      const data = await apiCall(`/api/v1/public/tenants/validate?domain=${encodeURIComponent(demoDomain)}`);
+      
+      if (data.valid) {
+        localStorage.setItem('tenant_domain', demoDomain);
+        localStorage.setItem('tenant_id', data.tenant_id?.toString() || '');
+        
+        setMessage(`Demo loaded! Tenant: ${data.display_name}`);
+        
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 1000);
+      } else {
+        setMessage('Demo tenant not available');
+      }
+    } catch (error) {
+      console.error('Demo Error:', error);
+      setMessage(error instanceof Error ? error.message : 'Failed to load demo');
     } finally {
       setIsLoading(false);
     }
@@ -57,9 +77,7 @@ export default function TenantSelectPage() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">HSE Management System</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Enter your organization&apos;s domain to continue
-          </p>
+          <p className="mt-2 text-sm text-gray-600">Simple Tenant Selection</p>
         </div>
 
         <div className="mt-8 bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
@@ -73,22 +91,20 @@ export default function TenantSelectPage() {
                   id="domain"
                   name="domain"
                   type="text"
-                  autoComplete="organization"
                   required
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
-                  placeholder="e.g., your-company.hse-system.com or your-domain.com"
+                  placeholder="e.g., demo.hse-system.com"
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                This is the domain provided by your HSE system administrator
-              </p>
             </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-                {error}
+            {message && (
+              <div className={`p-4 rounded ${message.includes('Success') || message.includes('Demo loaded') 
+                ? 'bg-green-50 border border-green-200 text-green-700' 
+                : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                {message}
               </div>
             )}
 
@@ -116,7 +132,7 @@ export default function TenantSelectPage() {
             <div className="mt-6">
               <button
                 type="button"
-                onClick={handleDemoTenant}
+                onClick={handleDemo}
                 disabled={isLoading}
                 className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
@@ -124,12 +140,6 @@ export default function TenantSelectPage() {
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="mt-8 text-center">
-          <p className="text-xs text-gray-500">
-            Don&apos;t know your domain? Contact your system administrator
-          </p>
         </div>
       </div>
     </div>

@@ -83,6 +83,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
         
+        # Never audit OPTIONS requests (CORS preflight)
+        if method == "OPTIONS":
+            return False
+            
         # Never audit certain endpoints
         for never_audit_path in self.audit_config["never_audit"]:
             if path.startswith(never_audit_path):

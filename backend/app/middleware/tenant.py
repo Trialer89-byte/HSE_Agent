@@ -18,6 +18,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Skip tenant context for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            return response
+            
         # Skip tenant context for public endpoints
         public_endpoints = [
             "/", "/health", "/api/docs", "/api/redoc", "/api/openapi.json",

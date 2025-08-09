@@ -1,113 +1,80 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { AuthStore, LoginRequest, RegisterRequest } from '@/types/auth';
-import apiClient from '@/config/api';
+import { apiCall } from '@/config/api';
 
-export const useAuthStore = create<AuthStore>()(
-  persist(
-    (set, get) => ({
-      // Initial state
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name: string;
+  role: string;
+  tenant_id: number;
+}
 
-      // Actions
-      login: async (credentials: LoginRequest) => {
-        set({ isLoading: true, error: null });
-        
-        try {
-          const response = await apiClient.post('/api/v1/auth/login', credentials);
-          const { access_token, user, tenant } = response.data;
-          
-          // Store token and user info
-          localStorage.setItem('auth_token', access_token);
-          localStorage.setItem('user', JSON.stringify(user));
-          localStorage.setItem('tenant_id', tenant.id.toString());
-          localStorage.setItem('tenant_domain', tenant.domain || '');
-          
-          set({
-            user,
-            token: access_token,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null
-          });
-        } catch (error: unknown) {
-          const errorMessage = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Login failed';
-          set({
-            error: errorMessage,
-            isLoading: false,
-            isAuthenticated: false
-          });
-          throw error;
-        }
-      },
+interface LoginData {
+  username: string;
+  password: string;
+  tenant_domain: string;
+}
 
-      register: async (data: RegisterRequest) => {
-        set({ isLoading: true, error: null });
-        
-        try {
-          await apiClient.post('/api/v1/auth/register', data);
-          set({ isLoading: false });
-        } catch (error: unknown) {
-          const errorMessage = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Registration failed';
-          set({
-            error: errorMessage,
-            isLoading: false
-          });
-          throw error;
-        }
-      },
+interface AuthStore {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  error: string | null;
+  login: (data: LoginData) => Promise<void>;
+  logout: () => void;
+  clearError: () => void;
+}
 
-      logout: () => {
-        // Clear all stored data
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('tenant_id');
-        localStorage.removeItem('tenant_domain');
+export const useAuthStore = create<AuthStore>((set) => ({
+  user: null,
+  token: null,
+  isLoading: false,
+  error: null,
+  
+  login: async (data: LoginData) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      const response = await apiCall('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: data.username,
+          password: data.password,
+          tenant_domain: data.tenant_domain,
+        }),
+      });
+      
+      if (response.access_token) {
+        // Store auth data
+        localStorage.setItem('auth_token', response.access_token);
+        localStorage.setItem('user', JSON.stringify(response.user));
         
         set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-          error: null
+          user: response.user,
+          token: response.access_token,
+          isLoading: false,
+          error: null,
         });
-      },
-
-      refreshToken: async () => {
-        set({ isLoading: true });
-        
-        try {
-          const response = await apiClient.post('/api/v1/auth/refresh');
-          const { access_token, user } = response.data;
-          
-          localStorage.setItem('auth_token', access_token);
-          localStorage.setItem('user', JSON.stringify(user));
-          
-          set({
-            user,
-            token: access_token,
-            isAuthenticated: true,
-            isLoading: false
-          });
-        } catch {
-          // If refresh fails, logout user
-          get().logout();
-          set({ isLoading: false });
-        }
-      },
-
-      clearError: () => set({ error: null }),
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({
-        user: state.user,
-        token: state.token,
-        isAuthenticated: state.isAuthenticated
-      }),
+      } else {
+        throw new Error('Invalid response from server');
+      }
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Login failed',
+      });
+      throw error;
     }
-  )
-);
+  },
+  
+  logout: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user');
+    }
+    set({ user: null, token: null, error: null });
+  },
+  
+  clearError: () => set({ error: null }),
+}));

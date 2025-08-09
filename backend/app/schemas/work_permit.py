@@ -66,6 +66,14 @@ class WorkPermitResponse(WorkPermitBase):
     created_at: datetime
     updated_at: datetime
     analyzed_at: Optional[datetime]
+    
+    # AI Analysis Results
+    ai_analysis: Optional[Dict[str, Any]] = None
+    content_analysis: Optional[Dict[str, Any]] = None
+    risk_assessment: Optional[Dict[str, Any]] = None
+    compliance_check: Optional[Dict[str, Any]] = None
+    dpi_recommendations: Optional[Dict[str, Any]] = None
+    action_items: Optional[List[Dict[str, Any]]] = None
 
     class Config:
         from_attributes = True
@@ -137,6 +145,27 @@ class PermitAnalysisRequest(BaseModel):
         allowed_orchestrators = ['autogen', 'fast', 'mock']
         if v not in allowed_orchestrators:
             raise ValueError(f'Orchestrator must be one of: {allowed_orchestrators}')
+        return v
+
+
+class PermitPreviewAnalysisRequest(BaseModel):
+    # Work permit data (required for preview)
+    title: str = Field(..., description="Titolo del permesso di lavoro")
+    description: str = Field(..., description="Descrizione dettagliata del lavoro")
+    work_type: str = Field(..., description="Tipo di lavoro")
+    location: Optional[str] = Field(None, description="Ubicazione del lavoro")
+    risk_level: Optional[str] = Field(None, description="Livello di rischio")
+    
+    # Analysis options (optional for preview)
+    analysis_type: Optional[str] = Field(default="comprehensive", description="Tipo di analisi")
+    focus_areas: Optional[List[str]] = Field(default=[], description="Aree di focus specifiche")
+    orchestrator: str = Field(default="mock", description="Orchestratore per preview (mock consigliato per velocità)")
+    
+    @validator('work_type')
+    def validate_work_type(cls, v):
+        allowed_types = ['chimico', 'scavo', 'manutenzione', 'elettrico', 'meccanico', 'edile', 'pulizia', 'altro']
+        if v not in allowed_types:
+            raise ValueError(f'Work type must be one of: {allowed_types}')
         return v
 
 

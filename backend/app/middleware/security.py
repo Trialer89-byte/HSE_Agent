@@ -40,8 +40,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.time()
         
-        # Skip middleware for health checks and docs
-        if request.url.path in ["/health", "/", "/api/docs", "/api/redoc"]:
+        # Skip middleware for health checks, docs, and OPTIONS requests
+        if request.url.path in ["/health", "/", "/api/docs", "/api/redoc"] or request.method == "OPTIONS":
             response = await call_next(request)
             return self._add_security_headers(response)
         

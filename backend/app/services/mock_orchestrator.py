@@ -9,6 +9,9 @@ class MockOrchestrator:
     For testing and emergency fallback
     """
     
+    def __init__(self, db=None):
+        self.db = db
+    
     async def run_mock_analysis(
         self,
         permit_data: Dict[str, Any],
@@ -34,7 +37,7 @@ class MockOrchestrator:
         
         result = {
             "analysis_id": f"mock_{int(time.time())}_{user_context.get('user_id', 'test')}",
-            "permit_id": permit_data.get("id"),
+            "permit_id": permit_data.get("id") or 0,  # Use 0 for preview since there's no real permit ID
             "analysis_complete": True,
             "confidence_score": mock_data["confidence"],
             "processing_time": round(processing_time, 3),
@@ -325,3 +328,26 @@ class MockOrchestrator:
                 }
             })
         return citations
+    
+    async def analyze_permit_draft(
+        self, 
+        permit_data: Dict[str, Any], 
+        analysis_type: str = "comprehensive",
+        focus_areas: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze a draft permit before saving it to database
+        """
+        # Create a mock user context for draft analysis
+        user_context = {
+            "user_id": "draft_preview",
+            "analysis_type": analysis_type,
+            "focus_areas": focus_areas or []
+        }
+        
+        # Use the existing run_mock_analysis method
+        return await self.run_mock_analysis(
+            permit_data=permit_data,
+            context_documents=[],
+            user_context=user_context
+        )

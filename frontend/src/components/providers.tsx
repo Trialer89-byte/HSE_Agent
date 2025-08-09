@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TenantProvider } from './tenant/tenant-provider';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -21,9 +20,7 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <TenantProvider>
-        {children}
-      </TenantProvider>
+      {children}
     </QueryClientProvider>
   );
 }

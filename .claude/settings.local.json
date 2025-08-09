@@ -39,7 +39,11 @@
       "Bash(npx next:*)",
       "Bash(docker stop:*)",
       "Bash(docker volume rm:*)",
-      "Bash(docker rm:*)"
+      "Bash(docker rm:*)",
+      "Bash(docker build:*)",
+      "Bash(docker run:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": []
   }

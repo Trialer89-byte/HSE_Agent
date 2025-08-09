@@ -1,5 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, timedelta
+import time
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -9,7 +11,7 @@ from app.models.user import User
 from app.schemas.work_permit import (
     WorkPermitCreate, WorkPermitUpdate, WorkPermitResponse, 
     PermitAnalysisResponse, PermitAnalysisRequest, PermitListResponse,
-    PermitAnalysisStatusResponse
+    PermitAnalysisStatusResponse, PermitPreviewAnalysisRequest
 )
 from app.services.auth_service import get_current_user
 from app.services.autogen_orchestrator import AutoGenAIOrchestrator
@@ -24,6 +26,7 @@ from fastapi import Request
 
 
 router = APIRouter(prefix="/api/v1/permits", tags=["Work Permits"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/", response_model=WorkPermitResponse)
@@ -71,7 +74,7 @@ async def create_work_permit(
 
 
 @router.get("/", response_model=PermitListResponse)
-@require_permission("own.permits.read")
+@require_permission("tenant.permits.read")
 async def list_work_permits(
     page: int = Query(1, ge=1, description="Numero pagina"),
     page_size: int = Query(20, ge=1, le=100, description="Elementi per pagina"),
@@ -229,6 +232,95 @@ async def update_work_permit(
     )
     
     return permit
+
+
+@router.post("/analyze-preview", response_model=PermitAnalysisResponse)
+@require_permission("permits.analyze")
+async def analyze_permit_preview(
+    analysis_request: PermitPreviewAnalysisRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Analisi di anteprima per bozza di permesso (senza salvarlo)
+    """
+    try:
+        # Create a temporary WorkPermit object from the request data
+        temp_permit_data = analysis_request.model_dump()
+        
+        logger.info(f"Received analysis request data: {temp_permit_data}")
+        logger.info(f"Title: '{temp_permit_data.get('title')}'")
+        logger.info(f"Description: '{temp_permit_data.get('description')}'")
+        logger.info(f"Work type: '{temp_permit_data.get('work_type')}'")
+        
+        # Validate required fields
+        if not all([
+            temp_permit_data.get('title'),
+            temp_permit_data.get('description'), 
+            temp_permit_data.get('work_type')
+        ]):
+            logger.error("Validation failed - missing required fields")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Title, description, and work_type are required for analysis"
+            )
+        
+        # Initialize orchestrator (use Mock for quick preview)
+        orchestrator = MockOrchestrator()
+        
+        logger.info(f"Starting analysis for permit data: {temp_permit_data}")
+        
+        # Perform analysis on the draft permit data
+        analysis_result = await orchestrator.analyze_permit_draft(
+            permit_data=temp_permit_data,
+            analysis_type=temp_permit_data.get('analysis_type', "comprehensive"),
+            focus_areas=temp_permit_data.get('focus_areas', [])
+        )
+        
+        logger.info(f"Analysis completed, result type: {type(analysis_result)}")
+        
+        # Log preview analysis
+        audit_service = AuditService(db)
+        await audit_service.log_action(
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            action="permits.preview_analyzed",
+            resource_type="permit_draft",
+            resource_name=temp_permit_data.get('title', 'Draft Permit'),
+            new_values={
+                "analysis_type": temp_permit_data.get('analysis_type'),
+                "work_type": temp_permit_data.get('work_type'),
+                "risk_level": temp_permit_data.get('risk_level')
+            },
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            api_endpoint=request.url.path,
+            category="analysis"
+        )
+        
+        logger.info("Creating response object")
+        
+        # The MockOrchestrator already returns a properly formatted response
+        # We just need to convert the datetime string to datetime object
+        analysis_result["timestamp"] = datetime.fromisoformat(analysis_result["timestamp"])
+        
+        # Create response using the analysis result
+        response = PermitAnalysisResponse(**analysis_result)
+        
+        logger.info("Response created successfully")
+        return response
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error in preview analysis: {e}")
+        logger.error(f"Exception type: {type(e)}")
+        logger.error(f"Exception args: {e.args}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Preview analysis failed: {str(e)} - Type: {type(e).__name__}"
+        )
 
 
 @router.post("/{permit_id}/analyze", response_model=PermitAnalysisResponse)

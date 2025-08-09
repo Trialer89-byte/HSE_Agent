@@ -20,18 +20,22 @@ PERMISSION_LEVELS = {
         "tenant.permits.*",   # All permits in tenant
         "tenant.documents.*", # All documents in tenant
         "tenant.users.read",  # Read tenant users
-        "tenant.reports.*"    # All reports
+        "tenant.reports.*",   # All reports
+        "permits.*",          # All permit operations including analysis
+        "own.*"              # Own resources (needed for some endpoints)
     ],
     "manager": [
         "department.permits.*",      # Department permits
         "department.documents.read", # Read department docs
         "own.permits.*",            # Own permits
-        "department.analysis.*"      # Department analysis
+        "department.analysis.*",     # Department analysis
+        "permits.analyze"           # Permit analysis capability
     ],
     "operator": [
         "own.permits.*",            # Own permits only
         "tenant.documents.read",    # Read company docs
-        "own.analysis.read"         # Own analysis results
+        "own.analysis.read",        # Own analysis results
+        "permits.analyze"           # Permit analysis capability
     ],
     "viewer": [
         "own.permits.read",         # Read own permits

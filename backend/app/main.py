@@ -69,19 +69,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-)
-
 # Add custom middleware (order matters!)
-app.add_middleware(AuditMiddleware)  # Must be first to capture all requests
+# These are added first so they execute after CORS
+app.add_middleware(AuditMiddleware)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(SecurityMiddleware)
+
+# Add CORS middleware LAST so it runs FIRST
+# This ensures CORS headers are added before any other middleware runs
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
+)
 
 # Include routers
 app.include_router(auth.router)
@@ -104,6 +108,14 @@ async def root():
         "timestamp": datetime.utcnow().isoformat(),
         "docs_url": "/api/docs" if settings.debug else "Documentation disabled in production"
     }
+
+
+@app.options("/health")
+async def health_check_options():
+    """
+    OPTIONS handler for health check endpoint
+    """
+    return {"message": "OK"}
 
 
 @app.get("/health")
