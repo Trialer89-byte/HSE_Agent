@@ -9,14 +9,7 @@ interface TenantProviderProps {
 }
 
 export function TenantProvider({ children }: TenantProviderProps) {
-  const { tenant, isLoading, autoDetectTenant } = useTenantStore();
-
-  useEffect(() => {
-    // Auto-detect tenant on app load if not already set
-    if (!tenant && !isLoading) {
-      autoDetectTenant();
-    }
-  }, [tenant, isLoading, autoDetectTenant]);
+  const { tenant, isLoading } = useTenantStore();
 
   // Initialize tenant info from localStorage on client-side
   useEffect(() => {

@@ -204,7 +204,7 @@ class VectorService:
         
         try:
             # Configure batch with optimal settings
-            batch_size = 100  # Process 100 chunks at a time
+            batch_size = 50  # Reduced from 100 to avoid timeout errors
             self.client.batch.configure(
                 batch_size=batch_size,
                 dynamic=True,  # Dynamic batching for better performance
@@ -250,8 +250,8 @@ class VectorService:
                         # Continue processing other chunks
                         continue
                     
-                    # Log progress every 50 chunks
-                    if (i + 1) % 50 == 0:
+                    # Log progress every 25 chunks (reduced batch size)
+                    if (i + 1) % 25 == 0:
                         print(f"[VectorService] Processed {i + 1}/{len(chunks)} chunks (Success: {successful_chunks}, Failed: {failed_chunks})")
                 
                 # Final flush happens automatically on context exit
@@ -276,7 +276,7 @@ class VectorService:
         query: str,
         filters: Dict[str, Any] = None,
         limit: int = 20,
-        threshold: float = 0.7
+        threshold: float = 0.0
     ) -> List[Dict[str, Any]]:
         """
         Hybrid search combining vector similarity and keyword matching
@@ -300,12 +300,21 @@ class VectorService:
                 
                 if "document_type" in filters:
                     if isinstance(filters["document_type"], list):
+                        # Create OR condition for multiple document types
+                        doc_type_conditions = []
                         for doc_type in filters["document_type"]:
-                            conditions.append({
+                            doc_type_conditions.append({
                                 "path": ["document_type"],
                                 "operator": "Equal",
                                 "valueText": doc_type
                             })
+                        if len(doc_type_conditions) > 1:
+                            conditions.append({
+                                "operator": "Or",
+                                "operands": doc_type_conditions
+                            })
+                        elif len(doc_type_conditions) == 1:
+                            conditions.append(doc_type_conditions[0])
                     else:
                         conditions.append({
                             "path": ["document_type"],
@@ -313,7 +322,8 @@ class VectorService:
                             "valueText": filters["document_type"]
                         })
                 
-                if "industry_sectors" in filters:
+                if "industry_sectors" in filters and filters["industry_sectors"]:
+                    # Only add industry sector filter if list is not empty
                     for sector in filters["industry_sectors"]:
                         conditions.append({
                             "path": ["industry_sectors"],
@@ -341,7 +351,8 @@ class VectorService:
                     "authority",
                     "section_title",
                     "chunk_index",
-                    "relevance_score"
+                    "relevance_score",
+                    "ai_keywords"  # Include keywords for agent use
                 ])
                 .with_hybrid(
                     query=query,
@@ -381,6 +392,7 @@ class VectorService:
                             "section_title": item["section_title"],
                             "chunk_index": item["chunk_index"],
                             "relevance_score": item["relevance_score"],
+                            "ai_keywords": item.get("ai_keywords", []),  # Include keywords for agents
                             "search_score": score
                         })
             
@@ -444,7 +456,8 @@ class VectorService:
                     "document_type",
                     "category",
                     "authority",
-                    "section_title"
+                    "section_title",
+                    "ai_keywords"  # Include keywords for agent use
                 ])
                 .with_near_text({"concepts": [query]})
                 .with_where(where_filter)
@@ -463,6 +476,7 @@ class VectorService:
                         "document_type": item["document_type"],
                         "category": item["category"],
                         "authority": item["authority"],
+                        "ai_keywords": item.get("ai_keywords", []),  # Include keywords for agents
                         "section_title": item["section_title"],
                         "certainty": item["_additional"]["certainty"],
                         "distance": item["_additional"]["distance"]

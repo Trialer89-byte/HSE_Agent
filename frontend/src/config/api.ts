@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// Base API configuration - simplified for local development
-export const API_BASE_URL = 'http://localhost:8000';
+// Base API configuration - use nginx proxy for all requests
+export const API_BASE_URL = 'http://localhost';
 
 // Create axios instance
 export const apiClient = axios.create({
@@ -9,7 +9,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: false, // Disable credentials for CORS simplicity
+  withCredentials: true, // Enable credentials to match backend CORS
 });
 
 // Request interceptor to add auth token and tenant info
@@ -73,9 +73,9 @@ export async function apiCall(endpoint: string, options?: RequestInit) {
   // Don't set Content-Type for FormData (let browser set it with boundary)
   const isFormData = options?.body instanceof FormData;
   
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     ...(!isFormData && { 'Content-Type': 'application/json' }),
-    ...options?.headers,
+    ...(options?.headers as Record<string, string> || {}),
   };
   
   // Add auth headers if available

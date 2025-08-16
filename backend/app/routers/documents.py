@@ -46,6 +46,7 @@ async def process_document_upload(
 ):
     """Background task to process document upload"""
     try:
+        print(f"[DEBUG] Starting background task for {task_id}")
         # Update progress
         upload_progress[task_id]["status"] = "processing"
         upload_progress[task_id]["progress"] = 10
@@ -84,6 +85,7 @@ async def process_document_upload(
         document_service.vector_service.add_document_chunks = add_chunks_with_progress
         
         # Process document
+        print(f"[DEBUG] Calling document_service.upload_document for {task_id}")
         document = await document_service.upload_document(
             file=upload_file,
             document_code=document_code,
@@ -100,6 +102,7 @@ async def process_document_upload(
         )
         
         # Update success
+        print(f"[DEBUG] Document upload completed successfully for {task_id}, document_id: {document.id}")
         upload_progress[task_id]["status"] = "completed"
         upload_progress[task_id]["progress"] = 100
         upload_progress[task_id]["message"] = "Document uploaded successfully"
@@ -107,6 +110,9 @@ async def process_document_upload(
         upload_progress[task_id]["completed_at"] = datetime.now()
         
     except Exception as e:
+        print(f"[ERROR] Upload failed for {task_id}: {str(e)}")
+        import traceback
+        print(f"[ERROR] Full traceback: {traceback.format_exc()}")
         # Update error
         upload_progress[task_id]["status"] = "failed"
         upload_progress[task_id]["error"] = str(e)

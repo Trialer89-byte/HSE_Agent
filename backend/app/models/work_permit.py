@@ -66,5 +66,10 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
             "duration_hours": self.duration_hours,
             "priority_level": self.priority_level,
             "custom_fields": self.custom_fields,
-            "tags": self.tags
+            "tags": self.tags,
+            # Include frequently used fields from custom_fields for agent compatibility
+            "equipment": self.custom_fields.get("equipment", "") if self.custom_fields else "",
+            "workers_count": self.custom_fields.get("workers_count", "") if self.custom_fields else "",
+            "identified_risks": self.custom_fields.get("identified_risks", []) if self.custom_fields else [],
+            "control_measures": self.custom_fields.get("control_measures", []) if self.custom_fields else []
         }

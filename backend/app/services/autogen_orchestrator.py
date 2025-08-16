@@ -5,6 +5,8 @@ import json
 from datetime import datetime
 
 from app.agents.simple_autogen_agents import SimpleAutoGenHSEAgents
+from app.agents.enhanced_autogen_agents import EnhancedAutoGenHSEAgents
+from app.agents.modular_orchestrator import ModularHSEOrchestrator
 
 
 class AutoGenAIOrchestrator:
@@ -12,8 +14,10 @@ class AutoGenAIOrchestrator:
     AutoGen-based AI Orchestrator for HSE permit analysis
     """
     
-    def __init__(self):
+    def __init__(self, use_modular: bool = True, use_enhanced_agents: bool = False):
         self.analysis_timeout = 60  # Reduced to 1 minute for faster response
+        self.use_modular = use_modular
+        self.use_enhanced_agents = use_enhanced_agents
     
     async def run_multi_agent_analysis(
         self,
@@ -30,8 +34,17 @@ class AutoGenAIOrchestrator:
         
         try:
             # Initialize AutoGen HSE agents with vector service for dynamic searches
-            hse_agents = SimpleAutoGenHSEAgents(user_context, vector_service)
-            print(f"[AutoGenOrchestrator] Initialized {len(hse_agents.agents)} AutoGen agents")
+            if self.use_modular:
+                hse_agents = ModularHSEOrchestrator(user_context, vector_service)
+                print(f"[AutoGenOrchestrator] Using MODULAR system with dynamic specialist loading")
+                # For modular system, directly return its analysis
+                return await hse_agents.analyze_permit(permit_data, context_documents)
+            elif self.use_enhanced_agents:
+                hse_agents = EnhancedAutoGenHSEAgents(user_context, vector_service)
+                print(f"[AutoGenOrchestrator] Using ENHANCED agents with {len(hse_agents.agents)} specialists")
+            else:
+                hse_agents = SimpleAutoGenHSEAgents(user_context, vector_service)
+                print(f"[AutoGenOrchestrator] Using SIMPLE agents with {len(hse_agents.agents)} AutoGen agents")
             if vector_service:
                 print(f"[AutoGenOrchestrator] Vector service enabled for dynamic document searches")
             
@@ -286,25 +299,7 @@ class AutoGenAIOrchestrator:
     def _create_citations_with_dpi_standards(self, dpi_items: List[str]) -> Dict[str, List[Dict]]:
         """Create citations including DPI standards"""
         citations = {
-            "normative_framework": [
-                {
-                    "document_info": {
-                        "title": "D.Lgs 81/08",
-                        "type": "Normativa",
-                        "date": "2008-04-09"
-                    },
-                    "relevance": {
-                        "score": 0.95,
-                        "reason": "Testo unico sulla salute e sicurezza sul lavoro"
-                    },
-                    "key_requirements": [],
-                    "frontend_display": {
-                        "color": "blue",
-                        "icon": "book-open",
-                        "category": "Normativa Nazionale"
-                    }
-                }
-            ],
+            "normative_framework": [],
             "company_procedures": []
         }
         

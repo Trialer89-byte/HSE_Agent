@@ -18,6 +18,7 @@ from app.services.autogen_orchestrator import AutoGenAIOrchestrator
 from app.services.fast_ai_orchestrator import FastAIOrchestrator
 from app.services.mock_orchestrator import MockOrchestrator
 from app.services.vector_service import VectorService
+from app.agents.advanced_orchestrator import AdvancedHSEOrchestrator
 from app.core.permissions import require_permission
 from app.core.tenant import enforce_tenant_isolation, tenant_context
 from app.core.tenant_queries import get_tenant_query_manager, tenant_required
@@ -45,11 +46,17 @@ async def create_work_permit(
     query_manager = get_tenant_query_manager(db)
     
     # Create work permit with automatic tenant assignment
+    permit_dict = permit_data.dict()
+    
+    # Remove status if it's an invalid placeholder value
+    if 'status' in permit_dict and permit_dict['status'] in ['string', '', None]:
+        permit_dict.pop('status', None)
+    
     work_permit = query_manager.create(
         WorkPermit,
-        **permit_data.dict(),
+        **permit_dict,
         created_by=current_user.id,
-        status="draft"
+        status="completed"  # Permesso definitivo quando salvato
     )
     
     db.commit()
@@ -266,19 +273,73 @@ async def analyze_permit_preview(
                 detail="Title, description, and work_type are required for analysis"
             )
         
-        # Initialize orchestrator (use Mock for quick preview)
-        orchestrator = MockOrchestrator()
+        # Initialize orchestrator based on request
+        orchestrator_type = temp_permit_data.get('orchestrator', 'mock').lower()
+        
+        if orchestrator_type == 'modular':
+            # Use modular orchestrator with real agents
+            orchestrator = AutoGenAIOrchestrator(use_modular=True)
+            logger.info("Using Modular orchestrator with real specialist agents")
+        elif orchestrator_type == 'autogen':
+            # Use standard AutoGen orchestrator
+            orchestrator = AutoGenAIOrchestrator(use_modular=False)
+            logger.info("Using AutoGen orchestrator")
+        else:
+            # Default to Mock for quick preview
+            orchestrator = MockOrchestrator()
+            logger.info("Using Mock orchestrator for instant preview")
         
         logger.info(f"Starting analysis for permit data: {temp_permit_data}")
         
         # Perform analysis on the draft permit data
-        analysis_result = await orchestrator.analyze_permit_draft(
-            permit_data=temp_permit_data,
-            analysis_type=temp_permit_data.get('analysis_type', "comprehensive"),
-            focus_areas=temp_permit_data.get('focus_areas', [])
-        )
+        if orchestrator_type in ['modular', 'autogen']:
+            # For real orchestrators, we need to provide more context
+            vector_service = VectorService()
+            
+            # Search for relevant documents
+            search_query = f"{temp_permit_data.get('title', '')} {temp_permit_data.get('description', '')} {temp_permit_data.get('work_type', '')}"
+            
+            try:
+                relevant_docs = await vector_service.hybrid_search(
+                    query=search_query,
+                    filters={
+                        "tenant_id": current_user.tenant_id,
+                        "document_type": ["normativa", "istruzione_operativa", "procedura_sicurezza"]
+                    },
+                    limit=10
+                )
+                logger.info(f"Found {len(relevant_docs)} relevant documents for preview analysis")
+            except Exception as e:
+                logger.warning(f"Document search failed: {e}")
+                relevant_docs = []
+            
+            # User context for agents
+            user_context = {
+                "tenant_id": current_user.tenant_id,
+                "user_role": current_user.role,
+                "department": getattr(current_user, 'department', 'safety')
+            }
+            
+            # Run analysis with real orchestrator
+            analysis_result = await orchestrator.run_multi_agent_analysis(
+                permit_data=temp_permit_data,
+                context_documents=relevant_docs,
+                user_context=user_context,
+                vector_service=vector_service
+            )
+        else:
+            # Mock orchestrator for quick preview
+            analysis_result = await orchestrator.analyze_permit_draft(
+                permit_data=temp_permit_data,
+                analysis_type=temp_permit_data.get('analysis_type', "comprehensive"),
+                focus_areas=temp_permit_data.get('focus_areas', [])
+            )
         
         logger.info(f"Analysis completed, result type: {type(analysis_result)}")
+        
+        # Ensure permit_id is present for preview (use 0 for drafts)
+        if 'permit_id' not in analysis_result or analysis_result['permit_id'] is None:
+            analysis_result['permit_id'] = 0  # Use 0 for draft/preview permits
         
         # Log preview analysis
         audit_service = AuditService(db)
@@ -360,25 +421,62 @@ async def analyze_permit_comprehensive(
     db.commit()
     
     try:
-        # Search relevant documents
-        # TEMPORARY: Skip Weaviate search for testing
-        relevant_docs = []
-        
-        # vector_service = VectorService()
-        # search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"
-        # 
-        # relevant_docs = await vector_service.hybrid_search(
-        #     query=search_query,
-        #     filters={
-        #         "tenant_id": current_user.tenant_id,
-        #         "industry_sectors": [permit.work_type] if permit.work_type else [],
-        #         "document_type": ["normativa", "istruzione_operativa"]
-        #     },
-        #     limit=20
-        # )
-        
-        # Initialize vector service for dynamic searches
+        # Initialize vector service for searches
         vector_service = VectorService()
+        
+        # Search relevant documents
+        search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"
+        
+        try:
+            relevant_docs = await vector_service.hybrid_search(
+                query=search_query,
+                filters={
+                    "tenant_id": current_user.tenant_id,
+                    "industry_sectors": [permit.work_type] if permit.work_type else [],
+                    "document_type": ["normativa", "istruzione_operativa", "procedura_sicurezza", 
+                                     "procedura", "standard", "guideline", "manuale"]
+                },
+                limit=20
+            )
+            print(f"[PermitRouter] Found {len(relevant_docs)} relevant documents for permit {permit_id}")
+        except Exception as e:
+            print(f"[PermitRouter] Warning: Document search failed: {e}")
+            relevant_docs = []
+        
+        # Prepare permit metadata from PostgreSQL
+        permit_metadata = {
+            "id": permit.id,
+            "status": permit.status,
+            "created_at": permit.created_at.isoformat() if permit.created_at else None,
+            "location_details": permit.location,
+            "equipment_list": permit.custom_fields.get("equipment", "").split(",") if permit.custom_fields.get("equipment") else [],
+            "custom_fields": permit.custom_fields or {},
+            "identified_risks": permit.custom_fields.get("identified_risks", []),
+            "control_measures": permit.custom_fields.get("control_measures", []),
+            "required_ppe": permit.dpi_required or []
+        }
+        
+        # Get historical data if available
+        try:
+            # Get similar permits
+            similar_permits = db.query(WorkPermit).filter(
+                WorkPermit.tenant_id == current_user.tenant_id,
+                WorkPermit.work_type == permit.work_type,
+                WorkPermit.id != permit.id
+            ).limit(5).all()
+            
+            permit_metadata["previous_permits"] = [
+                {"id": p.id, "title": p.title, "status": p.status}
+                for p in similar_permits
+            ]
+            
+            # Get site-specific risks (from custom fields or dedicated table)
+            if permit.location:
+                permit_metadata["site_specific_risks"] = [
+                    f"Rischio specifico per {permit.location}"
+                ]
+        except Exception as e:
+            print(f"[PermitRouter] Warning: Could not fetch historical data: {e}")
         
         # Choose orchestrator based on request parameter
         user_context = {
@@ -387,7 +485,20 @@ async def analyze_permit_comprehensive(
             "department": current_user.department
         }
         
-        if analysis_request.orchestrator == "autogen":
+        if analysis_request.orchestrator == "advanced":
+            # Use Advanced Orchestrator with PostgreSQL integration
+            print(f"[PermitRouter] Using Advanced Orchestrator for analysis - permit {permit_id}")
+            orchestrator = AdvancedHSEOrchestrator(
+                user_context=user_context,
+                vector_service=vector_service,
+                db_session=db
+            )
+            analysis_result = await orchestrator.analyze_permit_advanced(
+                permit_data=permit.to_dict(),
+                permit_metadata=permit_metadata,
+                context_documents=relevant_docs
+            )
+        elif analysis_request.orchestrator == "autogen":
             # Use AutoGen Orchestrator
             print(f"[PermitRouter] Using AutoGen Orchestrator for analysis - permit {permit_id}")
             orchestrator = AutoGenAIOrchestrator()

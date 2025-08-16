@@ -28,8 +28,6 @@ class Document(Base, TimestampMixin, TenantMixin):
     vector_id = Column(String(100), index=True)
     
     # AI Processing
-    ai_keywords = Column(JSON, default=[])
-    ai_categories = Column(JSON, default=[])
     relevance_score = Column(Float, default=0.0)
     
     # Versioning & Lifecycle

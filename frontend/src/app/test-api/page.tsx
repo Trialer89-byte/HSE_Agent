@@ -24,8 +24,8 @@ export default function TestApiPage() {
         controller.abort();
       }, 5000);
       
-      console.log('Fetching http://localhost:8000/health');
-      const response = await fetch('http://localhost:8000/health', {
+      console.log(`Fetching ${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/health`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/health`, {
         signal: controller.signal,
         mode: 'cors',
         credentials: 'omit'
@@ -69,7 +69,7 @@ export default function TestApiPage() {
         controller.abort();
       }, 5000);
       
-      const url = 'http://localhost:8000/api/v1/public/tenants/validate?domain=demo.hse-system.com';
+      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/public/tenants/validate?domain=demo.hse-system.com`;
       console.log('Fetching:', url);
       
       const response = await fetch(url, {
@@ -111,8 +111,8 @@ export default function TestApiPage() {
     addResult('cors', 'Testing CORS preflight...');
     
     try {
-      console.log('Sending OPTIONS request to http://localhost:8000/health');
-      const response = await fetch('http://localhost:8000/health', {
+      console.log(`Sending OPTIONS request to ${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/health`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/health`, {
         method: 'OPTIONS',
         headers: {
           'Origin': 'http://localhost:3000',
@@ -164,98 +164,235 @@ export default function TestApiPage() {
   }, []);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">🔧 Developer Test Page</h1>
-      
-      <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-        <h2 className="text-lg font-semibold mb-2">System Status</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-600">Backend: http://localhost:8000</p>
-            <p className="text-sm text-gray-600">Frontend: http://localhost:3000</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      {/* Industrial Background */}
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute inset-0" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Cpath d='M0 0h25v25H0zM75 0h25v25H75zM25 25h25v25H25zM0 75h25v25H0zM75 75h25v25H75z'/%3E%3C/g%3E%3C/svg%3E")`,
+        }} />
+      </div>
+
+      <div className="relative z-10 p-8 max-w-6xl mx-auto">
+        <div className="flex items-center space-x-4 mb-8">
+          <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center">
+            <span className="text-white font-black text-2xl">🔧</span>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Component Status: {componentTest}</p>
-            <p className="text-xs text-gray-500">Console (F12) for detailed logs</p>
+            <h1 className="text-3xl font-black text-white tracking-tight">DEVELOPER DIAGNOSTICS</h1>
+            <p className="text-slate-400 text-sm uppercase tracking-wide">System Testing & Validation Interface</p>
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-4 mb-6">
-        <button
-          onClick={testSimpleComponent}
-          className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-        >
-          Test Component (No API)
-        </button>
-        <button
-          onClick={testHealthCheck}
-          disabled={loading.health}
-          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading.health ? 'Testing...' : 'Test Health'}
-        </button>
-
-        <button
-          onClick={testCORSPreflight}
-          disabled={loading.cors}
-          className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading.cors ? 'Testing...' : 'Test CORS'}
-        </button>
-
-        <button
-          onClick={testTenantValidation}
-          disabled={loading.tenant}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading.tenant ? 'Testing...' : 'Test Tenant API'}
-        </button>
-
-        <button
-          onClick={testAllEndpoints}
-          disabled={Object.values(loading).some(l => l)}
-          className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Test All
-        </button>
-
-        <button
-          onClick={clearResults}
-          className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-        >
-          Clear Results
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        {Object.entries(results).map(([key, result]) => (
-          <div key={key} className="border rounded-lg p-4">
-            <h3 className="font-semibold mb-2 capitalize">{key} Test Result:</h3>
-            <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap font-mono">
-              {result}
-            </pre>
+      
+        <div className="mb-8 bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-sm">✓</span>
+            </div>
+            <h2 className="text-xl font-black text-white tracking-tight">SYSTEM STATUS</h2>
           </div>
-        ))}
-        
-        {Object.keys(results).length === 0 && (
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <p className="text-gray-600">Click a button above to test API connections</p>
-            <p className="text-sm text-gray-500 mt-2">
-              If buttons don&apos;t work, check the browser console for errors (F12)
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                <div className="font-mono text-sm">
+                  <span className="text-slate-400">Backend:</span>
+                  <span className="text-blue-400 ml-2">{process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}</span>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <div className="font-mono text-sm">
+                  <span className="text-slate-400">Frontend:</span>
+                  <span className="text-green-400 ml-2">{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                <div className="font-mono text-sm">
+                  <span className="text-slate-400">Component:</span>
+                  <span className="text-orange-400 ml-2">{componentTest}</span>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                <div className="font-mono text-sm">
+                  <span className="text-slate-400">Console:</span>
+                  <span className="text-purple-400 ml-2">F12 for detailed logs</span>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <h3 className="font-semibold text-yellow-800 mb-2">Troubleshooting:</h3>
-        <ul className="text-sm text-yellow-700 space-y-1">
-          <li>• If page blocks: Check browser console for JavaScript errors</li>
-          <li>• If requests fail: Ensure backend is running on port 8000</li>
-          <li>• If CORS errors: Backend CORS configuration may need updating</li>
-          <li>• Try the <a href="/test-api.html" className="underline">static HTML test page</a> as alternative</li>
-        </ul>
+        <div className="mb-8 bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-sm">⚙️</span>
+            </div>
+            <h2 className="text-xl font-black text-white tracking-tight">TEST CONTROLS</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <button
+              onClick={testSimpleComponent}
+              className="flex items-center space-x-3 px-6 py-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-600/50 rounded-xl transition-all duration-200 group"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-slate-500 to-slate-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">✓</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-orange-400 transition-colors">COMPONENT TEST</div>
+                <div className="text-slate-400 text-xs uppercase tracking-wide">No API Required</div>
+              </div>
+            </button>
+
+            <button
+              onClick={testHealthCheck}
+              disabled={loading.health}
+              className="flex items-center space-x-3 px-6 py-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-600/50 rounded-xl transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">❤️</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-orange-400 transition-colors">
+                  {loading.health ? 'TESTING...' : 'HEALTH CHECK'}
+                </div>
+                <div className="text-slate-400 text-xs uppercase tracking-wide">Backend Status</div>
+              </div>
+            </button>
+
+            <button
+              onClick={testCORSPreflight}
+              disabled={loading.cors}
+              className="flex items-center space-x-3 px-6 py-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-600/50 rounded-xl transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">🔄</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-orange-400 transition-colors">
+                  {loading.cors ? 'TESTING...' : 'CORS TEST'}
+                </div>
+                <div className="text-slate-400 text-xs uppercase tracking-wide">Cross-Origin</div>
+              </div>
+            </button>
+
+            <button
+              onClick={testTenantValidation}
+              disabled={loading.tenant}
+              className="flex items-center space-x-3 px-6 py-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-600/50 rounded-xl transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">🏢</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-orange-400 transition-colors">
+                  {loading.tenant ? 'TESTING...' : 'TENANT API'}
+                </div>
+                <div className="text-slate-400 text-xs uppercase tracking-wide">Multi-tenant</div>
+              </div>
+            </button>
+
+            <button
+              onClick={testAllEndpoints}
+              disabled={Object.values(loading).some(l => l)}
+              className="flex items-center space-x-3 px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 rounded-xl transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">⚡</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-purple-200 transition-colors">RUN ALL TESTS</div>
+                <div className="text-purple-200 text-xs uppercase tracking-wide">Full Suite</div>
+              </div>
+            </button>
+
+            <button
+              onClick={clearResults}
+              className="flex items-center space-x-3 px-6 py-4 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-600/50 rounded-xl transition-all duration-200 group"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-xs">🗑️</span>
+              </div>
+              <div className="text-left">
+                <div className="text-white font-bold text-sm group-hover:text-orange-400 transition-colors">CLEAR RESULTS</div>
+                <div className="text-slate-400 text-xs uppercase tracking-wide">Reset Output</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {Object.entries(results).map(([key, result]) => (
+            <div key={key} className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-black text-xs">📊</span>
+                </div>
+                <h3 className="text-lg font-black text-white tracking-tight capitalize">{key} TEST RESULT</h3>
+              </div>
+              <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
+                <pre className="text-sm overflow-x-auto whitespace-pre-wrap font-mono text-slate-200">
+                  {result}
+                </pre>
+              </div>
+            </div>
+          ))}
+          
+          {Object.keys(results).length === 0 && (
+            <div className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 text-center">
+              <div className="w-16 h-16 bg-slate-700/50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <span className="text-slate-400 text-2xl">📊</span>
+              </div>
+              <p className="text-slate-300 font-semibold mb-2">AWAITING TEST EXECUTION</p>
+              <p className="text-slate-400 text-sm mb-4">
+                Select a test button above to validate API connections and system functionality
+              </p>
+              <div className="px-4 py-2 bg-slate-700/30 border border-slate-600/30 rounded-xl inline-block">
+                <p className="text-xs text-slate-400 uppercase tracking-wide">
+                  Press F12 to monitor console output during testing
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-2xl p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-sm">⚠️</span>
+            </div>
+            <h3 className="text-lg font-black text-orange-300 tracking-tight">TROUBLESHOOTING GUIDE</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+              <div className="text-sm text-yellow-200">
+                <strong>Page Blocks:</strong> Check browser console (F12) for JavaScript errors
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+              <div className="text-sm text-yellow-200">
+                <strong>Request Failures:</strong> Ensure backend service is active on port 8000
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+              <div className="text-sm text-yellow-200">
+                <strong>CORS Errors:</strong> Backend cross-origin configuration requires updating
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+              <div className="text-sm text-yellow-200">
+                <strong>Alternative:</strong> <a href="/test-api.html" className="underline text-orange-400 hover:text-orange-300">Static HTML test interface</a> available
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ interface User {
   full_name: string;
   role: string;
   tenant_id: number;
+  permissions: string[];
 }
 
 interface LoginData {
@@ -19,6 +20,7 @@ interface LoginData {
 interface AuthStore {
   user: User | null;
   token: string | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
   login: (data: LoginData) => Promise<void>;
@@ -29,6 +31,7 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   token: null,
+  isAuthenticated: false,
   isLoading: false,
   error: null,
   
@@ -53,6 +56,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         set({
           user: response.user,
           token: response.access_token,
+          isAuthenticated: true,
           isLoading: false,
           error: null,
         });
@@ -73,7 +77,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       localStorage.removeItem('auth_token');
       localStorage.removeItem('user');
     }
-    set({ user: null, token: null, error: null });
+    set({ user: null, token: null, isAuthenticated: false, error: null });
   },
   
   clearError: () => set({ error: null }),

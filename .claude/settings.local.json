@@ -43,7 +43,12 @@
       "Bash(docker build:*)",
       "Bash(docker run:*)",
       "Bash(tasklist:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker kill:*)",
+      "Bash(docker start:*)"
     ],
     "deny": []
   }

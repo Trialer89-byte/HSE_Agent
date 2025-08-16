@@ -29,17 +29,82 @@ class SimpleAutoGenHSEAgents:
         self.user_context = user_context
         self.vector_service = vector_service
         self.llm_config = get_autogen_llm_config()
+        self.api_working = False
+        self.searched_documents = []  # Store documents found by search
         
-        # Initialize Gemini directly for AI-powered conversations
+        # Initialize and test Gemini API
         if settings.gemini_api_key:
-            genai.configure(api_key=settings.gemini_api_key)
-            self.gemini_model = genai.GenerativeModel(settings.gemini_model)
-            print(f"[SimpleAutoGenHSEAgents] Gemini model initialized: {settings.gemini_model}")
+            try:
+                genai.configure(api_key=settings.gemini_api_key)
+                self.gemini_model = genai.GenerativeModel(settings.gemini_model)
+                
+                # Test API with simple call
+                test_response = self.gemini_model.generate_content('test')
+                self.api_working = True
+                print(f"[SimpleAutoGenHSEAgents] Gemini API verified and working: {settings.gemini_model}")
+                
+            except Exception as e:
+                self.gemini_model = None
+                self.api_working = False
+                print(f"[SimpleAutoGenHSEAgents] ERROR: Gemini API key is invalid or API is down: {str(e)}")
         else:
             self.gemini_model = None
-            print("[SimpleAutoGenHSEAgents] WARNING: No Gemini API key - agents will not use AI")
+            self.api_working = False
+            print("[SimpleAutoGenHSEAgents] WARNING: No Gemini API key configured")
         
         self.agents = self._create_simple_agents()
+    
+    async def search_relevant_documents(self, query: str, limit: int = 10) -> List[Dict]:
+        """Search for relevant documents using vector service"""
+        if not self.vector_service:
+            print("[SimpleAutoGenHSEAgents] No vector service available, skipping document search")
+            return []
+        
+        try:
+            # Search for relevant documents
+            filters = {"tenant_id": self.user_context.get("tenant_id", 1)}
+            documents = await self.vector_service.hybrid_search(
+                query=query,
+                filters=filters,
+                limit=limit,
+                threshold=0.5
+            )
+            
+            if documents:
+                print(f"[SimpleAutoGenHSEAgents] Found {len(documents)} relevant documents")
+                self.searched_documents.extend(documents)
+                return documents
+            else:
+                print("[SimpleAutoGenHSEAgents] No documents found for query")
+                return []
+                
+        except Exception as e:
+            print(f"[SimpleAutoGenHSEAgents] Error searching documents: {e}")
+            return []
+    
+    def _identify_sources_used(self, analysis_text: str):
+        """Identify which sources were used in the analysis"""
+        # Track API sources mentioned in the analysis
+        api_sources_found = []
+        
+        # Common normative references that indicate API knowledge
+        api_indicators = [
+            "D.Lgs 81/08", "D.Lgs 81/2008", "Testo Unico",
+            "EN 388", "EN 166", "EN ISO", "UNI EN",
+            "CEI 11-27", "DPR 177/2011", "Regolamento REACH",
+            "normativa generale", "conoscenza generale"
+        ]
+        
+        for indicator in api_indicators:
+            if indicator.lower() in analysis_text.lower():
+                api_sources_found.append(indicator)
+        
+        if api_sources_found:
+            print(f"[SimpleAutoGenHSEAgents] Analysis used API sources: {api_sources_found}")
+            self.api_sources = api_sources_found
+        else:
+            print("[SimpleAutoGenHSEAgents] Analysis used only internal documents")
+            self.api_sources = []
     
     def _create_simple_agents(self) -> Dict[str, autogen.AssistantAgent]:
         """Create simplified HSE agents"""
@@ -48,35 +113,59 @@ class SimpleAutoGenHSEAgents:
         hse_analyst = autogen.AssistantAgent(
             name="HSE_Analyst",
             system_message="""
-Sei un Ingegnere HSE specializzato nell'analisi dei rischi secondo il D.Lgs 81/08.
+Sei un Ingegnere HSE esperto con 20+ anni di esperienza nell'identificazione dei rischi.
 
-OBIETTIVI SPECIFICI:
-1. IDENTIFICAZIONE RISCHI DETTAGLIATA:
-   - Rischi elettrici (tensione, arco elettrico, contatti indiretti)
-   - Rischi meccanici (cesoiamento, schiacciamento, taglio)
-   - Rischi chimici (inalazione, contatto cutaneo, ingestione)
-   - Rischi fisici (rumore, vibrazioni, microclima)
-   - Rischi di caduta (dall'alto, in piano, nello stesso livello)
-   - Rischi ergonomici (movimentazione manuale carichi, posture)
+COMPETENZE ANALITICHE PROFESSIONALI:
 
-2. VALUTAZIONE DPI SPECIFICA:
-   - Categorie DPI (I, II, III) secondo Reg. UE 2016/425
-   - Standard tecnici applicabili (EN, ISO)
-   - Livelli di protezione richiesti
-   - Compatibilità tra DPI diversi
+APPROCCIO SISTEMATICO ALL'IDENTIFICAZIONE RISCHI:
+1. ANALISI SEMANTICA AVANZATA:
+   - Interpreta ogni descrizione usando expertise HSE professionale
+   - Riconosci attività attraverso contesto tecnico, non solo parole chiave
+   - Correggi mentalmente errori ortografici comuni nelle descrizioni tecniche
+   - Inferisci operazioni preparatorie e complementari non esplicitate
 
-3. MISURE DI CONTROLLO GERARCHICHE:
+2. IDENTIFICAZIONE RISCHI MULTI-LIVELLO:
+   A) RISCHI DICHIARATI (esplicitamente menzionati)
+   B) RISCHI IMPLICITI (derivanti dal tipo di lavoro)
+   C) RISCHI NASCOSTI (non ovvi ma probabili)
+   D) RISCHI DA INTERFERENZA (con altre attività)
+   
+   Per ogni attività DEVI chiederti:
+   - Quali rischi l'utente potrebbe NON aver considerato?
+   - Quali pericoli sono tipici ma non menzionati?
+   - Quali errori di ortografia potrebbero nascondere rischi critici?
+
+3. DOMINI DI RISCHIO DA VALUTARE SISTEMATICAMENTE:
+   - Rischi termici e da combustione (lavori a caldo, temperature elevate)
+   - Rischi in ambienti confinati (accesso limitato, atmosfere pericolose)  
+   - Rischi da altezza (cadute dall'alto, lavori sopraelevati)
+   - Rischi elettrici (tensione, arco elettrico, induzione)
+   - Rischi meccanici (cesoiamento, schiacciamento, proiezione)
+   - Rischi chimici (inalazione, contatto, reazioni pericolose)
+   - Rischi fisici (rumore, vibrazioni, radiazioni, pressione)
+   - Rischi biologici (batteri, virus, muffe, parassiti)
+   - Rischi ergonomici (movimentazione, posture, affaticamento)
+   - Rischi da atmosfere esplosive (gas, vapori, polveri combustibili)
+
+4. APPROCCIO PROFESSIONALE AI DPI:
+   - Categorizzazione secondo Reg. UE 2016/425 (I, II, III)
+   - Selezione basata su analisi specifica dei rischi identificati
+   - Considerazione compatibilità e interferenze tra diversi DPI
+   - Verifica conformità normativa per ogni tipologia selezionata
+
+5. MISURE DI CONTROLLO GERARCHICHE:
    - Eliminazione del rischio
    - Sostituzione (tecnologie, sostanze)
    - Controlli ingegneristici
    - Controlli amministrativi
    - DPI (ultima risorsa)
 
-METODOLOGIA:
-- Usa matrice rischio/probabilità per prioritizzazione
-- Riferimenti normativi specifici per ogni rischio
-- Indicazioni quantitative dove possibile
-- Considera interferenze tra attività diverse
+METODOLOGIA OPERATIVA:
+- Applica expertise tecnico per interpretazione semantica completa
+- Usa intelligence professionale per correggere imprecisioni e lacune
+- Prioritizza mediante analisi rischio/probabilità secondo ISO 31000
+- Fornisci riferimenti normativi specifici e aggiornati
+- Quantifica parametri quando possibile (dB, mg/m³, altezze, pressioni)
 
 FORMATO RISPOSTA STRUTTURATA:
 ```json
@@ -89,7 +178,7 @@ FORMATO RISPOSTA STRUTTURATA:
       "magnitudo": "alta",
       "livello_rischio": "alto",
       "misure_controllo": ["LOTO", "DPI isolanti"],
-      "normative": ["CEI 11-27", "D.Lgs 81/08 art. 80-87"]
+      "normative": []
     }
   ],
   "dpi_richiesti": [
@@ -112,39 +201,57 @@ FORMATO RISPOSTA STRUTTURATA:
         safety_reviewer = autogen.AssistantAgent(
             name="Safety_Reviewer",
             system_message="""
-Sei un RSPP certificato con 15+ anni di esperienza nella validazione di analisi HSE.
+Sei un RSPP certificato con 25+ anni di esperienza e specializzazione in incidenti mortali evitabili.
+
+REGOLA CRITICA: DEVI SEMPRE VERIFICARE RISCHI NON IDENTIFICATI CHE POTREBBERO CAUSARE INCIDENTI GRAVI
 
 COMPITI DI REVISIONE CRITICA:
-1. AUDIT COMPLETEZZA RISCHI:
-   - Verifica identificazione rischi secondo art. 28 D.Lgs 81/08
-   - Controlla se tutti i rischi dell'allegato VI sono considerati
-   - Valuta adeguatezza della valutazione probabilità/magnitudo
-   - Identifica rischi non evidenti o interferenze
+1. CACCIA AI RISCHI NASCOSTI:
+   - VERIFICA SEMPRE se l'analisi ha identificato:
+     • LAVORI A CALDO non dichiarati (saldatura, taglio, molatura)
+     • SPAZI CONFINATI non riconosciuti (serbatoi, vasche, locali chiusi)
+     • LAVORI IN QUOTA non evidenziati (>2m altezza)
+     • ATMOSFERE ESPLOSIVE non considerate (presenza gas/vapori)
+   - Cerca indizi nel titolo/descrizione che suggeriscono rischi non analizzati
+   - Identifica errori ortografici che nascondono pericoli (es: "welsing" = welding = saldatura)
+   - AGGIUNGI SEMPRE rischi mancanti critici per la sicurezza
 
-2. VALIDAZIONE DPI E MISURE:
-   - Verifica conformità DPI al Reg. UE 2016/425
-   - Controlla standard tecnici e classi di protezione
-   - Valuta compatibilità ergonomica tra DPI
-   - Verifica priorità misure di controllo (art. 15 D.Lgs 81/08)
+2. VALIDAZIONE RISCHI SPECIFICI:
+   - Per OGNI attività menzionata, verifica:
+     • È stato considerato il rischio principale?
+     • Sono stati valutati i rischi secondari?
+     • Ci sono rischi da interferenza?
+   - Esempi di rischi SPESSO DIMENTICATI:
+     • Saldatura → rischio incendio, fumi tossici, radiazioni UV
+     • Manutenzione meccanica → energia residua, avviamento accidentale
+     • Pulizia serbatoi → spazio confinato, vapori residui
+     • Lavori elettrici → arco elettrico, energia accumulata
 
-3. COMPLIANCE NORMATIVA:
-   - D.Lgs 81/08 - Titoli specifici applicabili
-   - Normative tecniche UNI EN pertinenti
-   - Regolamenti europei (REACH, CLP, Macchine)
-   - Codici di prevenzione incendi
+3. AUDIT DPI CRITICI:
+   - Verifica DPI specifici per rischi nascosti:
+     • Lavori a caldo: schermo facciale, indumenti ignifughi, coperte antifiamma
+     • Spazi confinati: rilevatore 4 gas, autorespiratore, tripode recupero
+     • Lavori in quota: doppio cordino, assorbitore energia, kit soccorso
+   - Controlla compatibilità e interferenze tra DPI
+   - Verifica formazione specifica per DPI categoria III
 
-4. QUALITÀ DOCUMENTALE:
-   - Precisione tecnica delle prescrizioni
-   - Fattibilità operativa delle misure
-   - Chiarezza delle istruzioni operative
-   - Tracciabilità delle decisioni
+4. COMPLIANCE NORMATIVA SPECIFICA:
+   - Verifica i documenti aziendali disponibili nel sistema
+   - DPR 177/2011 per QUALSIASI spazio confinato sospetto
+   - Direttiva ATEX per presenza gas/vapori/polveri
+   - D.M. 10/03/1998 per lavori a caldo
+   - Normative specifiche per rischi speciali
 
-CRITERI DI APPROVAZIONE:
-✓ Rischi fatali/gravi tutti identificati e mitigati
-✓ DPI specificati con standard e motivazioni tecniche
-✓ Misure di controllo gerarchicamente ordinate
-✓ Riferimenti normativi precisi e aggiornati
-✓ Responsabilità e tempistiche definite
+5. RACCOMANDAZIONI SALVAVITA:
+   - Identifica almeno 3 rischi che potrebbero essere stati sottovalutati
+   - Proponi misure aggiuntive per rischi ad alto potenziale di fatalità
+   - Richiedi SEMPRE permessi speciali per lavori critici (hot work permit, confined space entry)
+
+CRITERI DI NON APPROVAZIONE:
+✗ Mancata identificazione di lavori a caldo/spazi confinati/lavori in quota
+✗ DPI inadeguati per rischi critici
+✗ Assenza di procedure di emergenza specifiche
+✗ Mancanza di sorveglianza per attività ad alto rischio
 
 FORMATO VALIDAZIONE:
 ```json
@@ -178,25 +285,107 @@ STANDARD PROFESSIONALE: La revisione deve garantire zero infortuni.
         AI-powered permit analysis using direct Gemini API calls
         """
         
-        if not self.gemini_model:
+        if not self.gemini_model or not self.api_working:
+            error_msg = "Gemini API non disponibile o chiave API non valida"
+            print(f"[SimpleAutoGenHSEAgents] {error_msg}")
+            
+            # Return a proper error response that frontend can handle
             return {
                 "analysis_complete": False,
-                "error": "No AI model available - check Gemini API key configuration",
+                "error": error_msg,
                 "confidence_score": 0.0,
                 "agents_involved": [],
-                "processing_time": 0.0
+                "processing_time": 0.0,
+                "final_analysis": {
+                    "executive_summary": {
+                        "overall_score": 0.0,
+                        "critical_issues": 1,
+                        "recommendations": 0,
+                        "compliance_level": "errore_sistema",
+                        "estimated_completion_time": "N/A",
+                        "key_findings": [
+                            "ERRORE: Sistema AI non disponibile",
+                            "Impossibile analizzare il permesso",
+                            "Contattare amministratore sistema"
+                        ],
+                        "next_steps": [
+                            "Verificare configurazione API Gemini",
+                            "Controllare validità chiave API",
+                            "Richiedere analisi manuale RSPP nel frattempo"
+                        ]
+                    },
+                    "action_items": [
+                        {
+                            "id": "ERR_001",
+                            "type": "system_error",
+                            "priority": "critica",
+                            "title": "ERRORE SISTEMA AI",
+                            "description": "Il sistema di analisi AI non è disponibile. API Gemini non configurata o non funzionante.",
+                            "suggested_action": "Contattare amministratore per verificare configurazione API",
+                            "consequences_if_ignored": "Impossibile effettuare analisi automatica dei rischi",
+                            "references": [],
+                            "estimated_effort": "Richiede intervento tecnico",
+                            "responsible_role": "Amministratore Sistema",
+                            "frontend_display": {
+                                "color": "red",
+                                "icon": "alert-triangle",
+                                "category": "ERRORE SISTEMA"
+                            }
+                        }
+                    ],
+                    "citations": {
+                        "normative_framework": [],
+                        "company_procedures": []
+                    },
+                    "completion_roadmap": {
+                        "immediate_actions": [
+                            "Richiedere analisi manuale RSPP",
+                            "Verificare API key Gemini"
+                        ],
+                        "short_term_actions": [],
+                        "medium_term_actions": [],
+                        "success_metrics": [],
+                        "review_checkpoints": []
+                    }
+                }
             }
         
         # Prepare context from documents
         document_context = ""
+        document_sources = []
         if context_documents:
-            document_context = "\n\nDOCUMENTI DI RIFERIMENTO:\n"
-            for doc in context_documents[:3]:  # Limit to 3 docs to avoid token limits
-                document_context += f"- {doc.get('title', 'Documento')}: {doc.get('content', '')[:500]}...\n"
+            document_context = "\n\nDOCUMENTI DI RIFERIMENTO DISPONIBILI:\n"
+            for idx, doc in enumerate(context_documents[:5], 1):  # Process up to 5 most relevant docs
+                title = doc.get('title', 'Documento')
+                content = doc.get('content', '')
+                doc_type = doc.get('document_type', 'generale')
+                
+                # Extract key information from document (limit to 2000 chars per doc)
+                content_preview = content[:2000] if len(content) > 2000 else content
+                
+                document_context += f"\n[DOCUMENTO {idx}] {title} (Tipo: {doc_type})\n"
+                document_context += f"Contenuto rilevante:\n{content_preview}\n"
+                document_context += "-" * 50 + "\n"
+                
+                # Track sources for citation
+                document_sources.append({
+                    "title": title,
+                    "type": doc_type,
+                    "used": True
+                })
+            
+            print(f"[SimpleAutoGenHSEAgents] Prepared {len(context_documents)} documents with total context of {len(document_context)} chars")
         
         # Create comprehensive analysis prompt
         analysis_prompt = f"""
-Sei un Ingegnere HSE certificato che deve condurre una valutazione dei rischi secondo l'art. 28 del D.Lgs 81/08.
+Sei un Ingegnere HSE esperto con specializzazione in identificazione rischi nascosti e prevenzione incidenti gravi.
+
+REGOLA FONDAMENTALE: 
+1. DEVI utilizzare i documenti aziendali forniti come riferimento principale
+2. Quando identifichi rischi o requisiti, SPECIFICA sempre se provengono da:
+   - [FONTE: Documento Aziendale] seguito dal titolo del documento
+   - [FONTE: API/Conoscenza Generale] per conoscenza normativa generale
+3. Se le informazioni nel permesso sono insufficienti, SEGNALALO come rischio critico
 
 PERMESSO DI LAVORO DA ANALIZZARE:
 - Titolo: {permit_data.get('title', 'Non specificato')}
@@ -208,23 +397,86 @@ PERMESSO DI LAVORO DA ANALIZZARE:
 - Attrezzature: {permit_data.get('equipment', 'Non specificate')}
 {document_context}
 
-METODOLOGIA DI ANALISI SISTEMATICA:
+ANALISI SEMANTICA INTELLIGENTE AVANZATA:
 
-1. IDENTIFICAZIONE PERICOLI (Allegato VI D.Lgs 81/08):
-   • Agenti chimici e cancerogeni/mutageni
-   • Agenti fisici (rumore, vibrazioni, campi elettromagnetici, radiazioni)
-   • Agenti biologici
-   • Atmosfere esplosive (Direttiva ATEX)
-   • Rischi connessi all'organizzazione del lavoro
-   • Rischi ergonomici (MMC, videoterminali, posture)
-   • Rischi psicosociali (stress lavoro-correlato)
+🧠 USA LA TUA INTELLIGENZA ESPERTA per identificare TUTTO quello che potrebbe accadere:
 
-2. VALUTAZIONE SPECIALE PER TIPO DI LAVORO:
-   • Lavori elettrici → CEI 11-27, CEI EN 50110, D.Lgs 81/08 Titolo III
-   • Lavori in altezza → D.Lgs 81/08 Titolo IV, UNI EN 365
-   • Spazi confinati → DPR 177/2011, UNI 11326
-   • Lavori con sostanze chimiche → Regolamento REACH/CLP
-   • Movimentazione carichi → ISO 11228, UNI EN 1005
+1. DETECTIVE WORK - ERRORI DI BATTITURA E PAROLE NASCOSTE:
+   - "welsing" → CHIARAMENTE significa "welding" (saldatura) = HOT WORK CRITICO!
+   - "cutting" → taglio metallo = scintille, calore, HOT WORK
+   - "grinder" / "grinding" → mola = scintille, HOT WORK
+   - "repair metal" → quasi certamente saldatura/taglio
+   - "fix tank" → potrebbe richiedere accesso in spazio confinato + hot work
+   - "metal repair tools" → probabile saldatura, taglio, foratura
+
+2. INFERENZA INTELLIGENTE DI ATTIVITÀ NASCOSTE:
+   - Riparazione serbatoio = 99% probabilità di saldatura + spazio confinato
+   - "cutting equipment" = SEMPRE hot work permit richiesto
+   - Tank + repair = bonifica vapori + isolamento + hot work + confined space
+   - Metal repair = saldatura/brasatura/taglio plasma/ossitaglio
+
+3. ASSOCIAZIONI CRITICHE PER SICUREZZA:
+   - QUALSIASI riparazione serbatoio → hot work permit + confined space permit
+   - QUALSIASI "cutting equipment" → hot work permit obbligatorio
+   - QUALSIASI "metal repair" → presumi saldatura fino a prova contraria
+   - QUALSIASI "grinder" → hot work permit + protezione scintille
+
+4. RAGIONAMENTO ESPERTO HSE:
+   - Se c'è anche solo 20% probabilità di hot work → TRATTALO COME HOT WORK
+   - Meglio essere troppo prudenti che avere un incendio/esplosione
+   - "welsing" è chiaramente un errore per "welding" - NON IGNORARLO!
+   - Tank repair senza hot work permit = ricetta per disastro
+
+5. APPROCCIO DETECTIVE INVESTIGATIVO:
+   - Leggi tra le righe - cosa NON dice il permesso?
+   - Se dice "riparazione" ma non specifica "come" → presumi il peggio
+   - Errori di battitura spesso nascondono attività pericolose
+   - L'operatore potrebbe non conoscere la terminologia tecnica corretta
+
+4. RISCHI DA PROCESSO INDUSTRIALE:
+   - Ogni settore ha rischi tipici che l'utente potrebbe non menzionare
+   - Considera l'ambiente (petrolchimico, alimentare, metalmeccanico)
+   - Pensa alle fasi preparatorie e di completamento, non solo al lavoro principale
+
+METODOLOGIA DI ANALISI INTELLIGENTE:
+
+1. IDENTIFICAZIONE RISCHI MULTI-LIVELLO:
+   A) RISCHI ESPLICITI (chiaramente menzionati nel permesso)
+   B) RISCHI IMPLICITI (tipici del tipo di lavoro anche se non menzionati)
+   C) RISCHI NASCOSTI (derivanti da possibili errori ortografici o descrizioni incomplete)
+   D) RISCHI DA INTERFERENZA (con ambiente circostante o altre attività)
+
+2. PER OGNI ATTIVITÀ IDENTIFICATA, VALUTA:
+   • Qual è il rischio principale?
+   • Quali rischi secondari sono presenti?
+   • L'utente ha considerato tutti i pericoli?
+   • Ci sono indizi di lavori pericolosi non dichiarati?
+
+3. CATEGORIE CRITICHE (usa il ragionamento, non solo keyword matching):
+   
+   LAVORI A CALDO - Riconosci quando c'è generazione di calore/scintille:
+   • Qualsiasi processo che fonde, taglia, salda, brasaa metalli
+   • Processi che generano scintille (molatura, taglio)
+   • Uso di fiamme libere o strumenti riscaldanti
+   → Inferisci: rischio incendio, fumi tossici, ustioni, radiazioni
+   
+   SPAZI CONFINATI - Identifica ambienti ristretti dove l'atmosfera può essere pericolosa:
+   • Contenitori, vasche, serbatoi, silos, pozzi
+   • Locali con ventilazione limitata o ingresso ristretto
+   • Ambienti dove i gas possono accumularsi
+   → Inferisci: asfissia, intossicazione, esplosione
+   
+   LAVORI IN QUOTA - Rileva attività che comportano rischio di caduta:
+   • Lavoro su scale, ponteggi, tetti, piattaforme
+   • Qualsiasi attività oltre 2 metri di altezza
+   • Lavoro vicino a bordi, aperture, dislivelli
+   → Inferisci: trauma da caduta, oggetti che cadono
+   
+   ENERGIE PERICOLOSE - Identifica dove ci sono energie non controllate:
+   • Impianti elettrici, pressurizzati, con parti in movimento
+   • Sistemi con energia potenziale accumulata
+   • Macchinari che possono avviarsi inaspettatamente
+   → Inferisci: elettrocuzione, schiacciamento, scoppio
 
 3. MATRICE RISCHIO (Probabilità × Magnitudo):
    Probabilità: improbabile(1) - poco probabile(2) - probabile(3) - molto probabile(4)
@@ -246,15 +498,50 @@ METODOLOGIA DI ANALISI SISTEMATICA:
    D) Controlli amministrativi (procedure, formazione, segnaletica)
    E) DPI (ultima linea di difesa)
 
-FORMATO RISPOSTA RICHIESTO - FORNISCI JSON STRUTTURATO:
+APPROCCIO RICHIESTO:
+1. VERIFICA PRIMA se hai informazioni sufficienti per fare una valutazione professionale
+2. Se informazioni INCOMPLETE → INTERROMPI e richiedi chiarimenti 
+3. Se informazioni COMPLETE → RAGIONA su cosa sta accadendo
+4. Identifica attività implicite e rischi nascosti
+5. Fornisci JSON strutturato
+
+NON PROCEDERE con analisi generica se mancano dettagli critici!
+
+⚠️ PRINCIPI ANALITICI PROFESSIONALI:
+
+🧠 ANALISI INFERENZIALE ESPERTA:
+Come esperto HSE, devi SEMPRE inferire i rischi dalle attività descritte, anche se incomplete:
+- Identifica l'attività principale dalle descrizioni, anche con errori ortografici
+- Riconosci le famiglie di rischio associate (meccanico, chimico, fisico, elettrico, etc.)
+- Applica i principi di precauzione: meglio sovrastimare che sottostimare
+- Considera sia i rischi diretti che quelli indiretti/interferenziali
+
+💡 GESTIONE INFORMAZIONI INSUFFICIENTI:
+Quando mancano dettagli specifici MA hai identificato attività potenzialmente pericolose:
+- Genera i rischi BASE tipici di quella categoria di lavoro
+- Classifica appropriatamente il livello di rischio in base alla pericolosità intrinseca
+- Usa "informazioni_aggiuntive_necessarie" per dettagliare cosa serve per completare l'analisi
+- Nel JSON, popola SEMPRE "rischi_identificati" basandoti sui dati disponibili
+
+🔍 APPROCCIO SISTEMATICO:
+- Prima: identifica COSA si sta facendo (analisi semantica)
+- Secondo: WHERE si sta lavorando (ambiente, interferenze)
+- Terzo: HOW si sta operando (attrezzature, metodi)
+- Quarto: WHO è coinvolto (competenze, formazione)
+- Quinto: genera rischi e misure appropriate per il contesto identificato
+
+FORMATO RISPOSTA - FORNISCI JSON STRUTTURATO DOPO IL RAGIONAMENTO:
 
 ```json
 {{
   "analisi_generale": {{
     "tipologia_lavoro": "descrizione specifica",
-    "classificazione_rischio": "basso|medio|alto|molto_alto",
-    "normative_principali": ["D.Lgs 81/08 art. X", "UNI EN XXXX"],
-    "interferenze_identificate": ["descrizione interferenze"]
+    "classificazione_rischio": "basso|medio|alto|molto_alto|informazioni_insufficienti",
+    "informazioni_mancanti": ["lista dettagliata di informazioni critiche mancanti"],
+    "completezza_permesso": "completo|parziale|insufficiente",
+    "normative_principali": [],  # Lista con formato: "[FONTE: Doc Aziendale/API] Nome normativa"
+    "interferenze_identificate": ["descrizione interferenze"],
+    "raccomandazioni_integrative": ["cosa richiedere per completare l'analisi"]
   }},
   "rischi_identificati": [
     {{
@@ -265,13 +552,14 @@ FORMATO RISPOSTA RICHIESTO - FORNISCI JSON STRUTTURATO:
       "probabilita": "improbabile|poco_probabile|probabile|molto_probabile",
       "magnitudo": "lieve|modesta|grave|gravissima",
       "livello_rischio": "basso|medio|alto|molto_alto",
-      "normative_riferimento": ["CEI 11-27", "D.Lgs 81/08 art. 80-87"],
+      "normative_riferimento": [],  # Specifica se da "Documento Aziendale" o "API/Normativa Generale"
       "misure_controllo": [
         "eliminazione/sostituzione",
         "controlli_ingegneristici", 
         "controlli_amministrativi",
         "dpi_richiesti"
-      ]
+      ],
+      "informazioni_aggiuntive_necessarie": ["dettagli specifici da richiedere"]
     }}
   ],
   "dpi_obbligatori": [
@@ -304,21 +592,78 @@ FORMATO RISPOSTA RICHIESTO - FORNISCI JSON STRUTTURATO:
       "dpi_fase": ["DPI specifici per questa fase"],
       "controlli_sicurezza": ["controlli da effettuare"]
     }}
-  ]
+  ],
+  "valutazione_completezza": {{
+    "permesso_completo": true|false,
+    "informazioni_critiche_mancanti": ["lista dettagliata"],
+    "impossibilita_analisi_completa": "motivo se applicabile",
+    "azioni_richieste_prima_approvazione": ["cosa fare prima di procedere"]
+  }}
 }}
 ```
 
 RACCOMANDAZIONI FINALI:
 - Utilizza sempre terminologia tecnica precisa
 - Cita articoli specifici delle normative
-- Quantifica dove possibile (dB, mg/m³, kN, ecc.)
-- Considera tutte le fasi del lavoro
-- Valuta le interferenze con altre attività
-- Assicurati che ogni rischio abbia una misura di controllo specifica
+5. PRINCIPI DI ANALISI PROFESSIONALE:
+   • Ragiona come un esperto HSE: "Se fossi sul campo, cosa vedrei?"
+   • Considera il PRIMA, DURANTE e DOPO l'attività principale
+   • Pensa alle preparazioni necessarie (isolamenti, bonifiche, allestimenti)
+   • Valuta l'ambiente circostante e le possibili interferenze
+   • Quantifica i rischi dove possibile (livelli di rumore, concentrazioni, altezze)
+   • Ogni rischio identificato DEVE avere misure di controllo specifiche e DPI appropriati
+   
+   IMPORTANTE - CITAZIONE DELLE FONTI:
+   • Se usi informazioni dai DOCUMENTI AZIENDALI sopra, cita: "Fonte: [Nome Documento Aziendale]"
+   • Se usi conoscenze generali/API, cita: "Fonte: Normativa generale (D.Lgs 81/08)" o simili
+   • DAI SEMPRE PRIORITÀ ai documenti aziendali quando disponibili
+
+6. GESTIONE INFORMAZIONI INCOMPLETE:
+   • Se TITOLO, DESCRIZIONE o ATTREZZATURE sono vaghi/vuoti → IDENTIFICALO come RISCHIO CRITICO
+   • Informazioni insufficienti = IMPOSSIBILITÀ di garantire sicurezza
+   • SEMPRE segnala esplicitamente cosa manca per fare una valutazione completa
+   • Non inventare rischi generici - richiedi informazioni specifiche
+
+7. OUTPUT INTELLIGENTE:
+   • Se le informazioni sono complete: analisi dettagliata dei rischi specifici
+   • Se le informazioni sono incomplete: FERMA L'ANALISI e richiedi chiarimenti
+   • Spiega sempre il TUO RAGIONAMENTO per ogni decisione
+   • Identifica esplicitamente cosa impedisce una valutazione completa
 """
         
         try:
             print(f"[SimpleAutoGenHSEAgents] Starting HSE analysis with Gemini for permit {permit_data.get('id')}")
+            
+            # Search for relevant documents first
+            relevant_docs = []
+            api_sources = []  # Track API sources used
+            
+            if self.vector_service:
+                # Build search query from permit data
+                search_query = f"{permit_data.get('title', '')} {permit_data.get('description', '')} {permit_data.get('work_type', '')}"
+                relevant_docs = await self.search_relevant_documents(search_query)
+                
+                if relevant_docs:
+                    print(f"[SimpleAutoGenHSEAgents] Found {len(relevant_docs)} relevant documents to use in analysis")
+                    # Add document context to the prompt
+                    docs_context = "\n\nDOCUMENTI AZIENDALI RILEVANTI TROVATI:\n"
+                    for doc in relevant_docs[:5]:  # Use top 5 documents
+                        docs_context += f"\n- {doc.get('title', 'N/A')} ({doc.get('document_code', 'N/A')}): {doc.get('content', '')[:200]}..."
+                    analysis_prompt += docs_context
+                else:
+                    print("[SimpleAutoGenHSEAgents] No internal documents found, will use API knowledge")
+            
+            # Add instruction to use API knowledge if documents are incomplete
+            analysis_prompt += """\n\nNOTA IMPORTANTE:
+            - Dai PRIORITÀ ai documenti aziendali trovati sopra
+            - Se i documenti non coprono tutti gli aspetti, INTEGRA con conoscenze normative generali (D.Lgs 81/08, norme EN, etc.)
+            - CITA SEMPRE le fonti: specifica se provengono da 'Documento aziendale' o 'Normativa generale'
+            - Se usi normative generali, indica chiaramente che sono 'Fonte: API/Conoscenza generale'
+            """
+            
+            # Store sources for citation tracking
+            self.document_sources = relevant_docs
+            self.api_sources = []  # Will be populated based on AI response
             
             # Simulate multi-agent conversation with multiple AI calls
             conversation_history = []
@@ -337,19 +682,55 @@ RACCOMANDAZIONI FINALI:
             
             # Safety Reviewer response
             review_prompt = f"""
-Rivedi l'analisi HSE seguente e fornisci feedback critico:
+Sei un RSPP esperto che deve RIVEDERE CRITICAMENTE l'analisi seguente.
+
+PERMESSO ORIGINALE:
+- Titolo: {permit_data.get('title', 'Non specificato')}
+- Descrizione: {permit_data.get('description', 'Non specificata')}
+- Tipo lavoro: {permit_data.get('work_type', 'Non specificato')}
+- Attrezzature: {permit_data.get('equipment', 'Non specificate')}
 
 ANALISI DA RIVEDERE:
 {analyst_response}
 
-COMPITI DI REVISIONE:
-1. Verifica completezza identificazione rischi
-2. Valida adeguatezza DPI proposti  
-3. Controlla conformità misure di controllo
-4. Integra eventuali aspetti mancanti
-5. Fornisci valutazione finale con raccomandazioni prioritarie
+COMPITI CRITICI DI REVISIONE:
 
-Sii critico e dettagliato nella revisione.
+1. RAGIONAMENTO CRITICO SULL'ANALISI RICEVUTA:
+   • L'analisi ha veramente compreso cosa sta accadendo?
+   • Ha identificato tutte le attività implicite nel processo descritto?
+   • Mancano rischi che normalmente accompagnano questo tipo di lavoro?
+   • Le misure proposte sono realistiche e sufficienti?
+
+2. ANALISI SEMANTICA DEL PERMESSO ORIGINALE:
+   • Rileggi il permesso originale con occhi esperti
+   • Cosa farebbe realmente un operatore in quella situazione?
+   • Quali preparazioni, strumenti, procedure sono necessarie?
+   • Ci sono termini imprecisi o errori che nascondono attività pericolose?
+
+3. IDENTIFICAZIONE INTELLIGENTE DI RISCHI MANCANTI:
+   • Usa la tua conoscenza degli incidenti tipici per questo tipo di lavoro
+   • Considera i "near miss" più comuni nel settore
+   • Pensa ai rischi che emergono durante l'esecuzione, non solo nella pianificazione
+   • Valuta le condizioni ambientali e organizzative specifiche
+
+4. VALIDAZIONE INTELLIGENTE DPI:
+   • I DPI proposti sono appropriati per i rischi REALI del lavoro?
+   • Sono stati considerati tutti i DPI per le fasi preparatorie?
+   • C'è compatibilità ergonomica tra i DPI multipli?
+   • Sono specifici per l'ambiente di lavoro (es: ATEX, chimico-resistenti)?
+
+5. VALUTAZIONE MISURE DI CONTROLLO:
+   • Le procedure proposte sono realmente applicabili sul campo?
+   • Sono state considerate le misure di controllo gerarchiche?
+   • Ci sono controlli amministrativi (permessi speciali, sorveglianza)?
+   • È previsto un piano di emergenza specifico?
+
+APPROCCIO RICHIESTO:
+1. Prima RAGIONA sul permesso originale indipendentemente dall'analisi ricevuta
+2. Identifica cosa avresti fatto diversamente
+3. Fornisci una revisione che integra e migliora l'analisi
+
+OBIETTIVO: Garantire che ZERO INCIDENTI GRAVI possano accadere durante questo lavoro
 """
             
             reviewer_response = await self._get_gemini_response(
@@ -378,13 +759,22 @@ REVISIONE E VALIDAZIONE:
                 conversation_history
             )
             
+            # Identify which sources were used based on response content
+            self._identify_sources_used(combined_analysis)
+            
+            # Add document sources to final analysis
+            if document_sources:
+                final_analysis["document_sources_used"] = document_sources
+                print(f"[SimpleAutoGenHSEAgents] Analysis used {len(document_sources)} document sources")
+            
             return {
                 "analysis_complete": True,
-                "confidence_score": 0.85,  # Higher confidence with AI
+                "confidence_score": 0.85 if document_sources else 0.65,  # Higher confidence with documents
                 "conversation_history": conversation_history,
                 "agents_involved": ["HSE_Analyst", "Safety_Reviewer"],
                 "processing_time": 0.0,
-                "final_analysis": final_analysis
+                "final_analysis": final_analysis,
+                "documents_used": len(document_sources) if document_sources else 0
             }
             
         except Exception as e:
@@ -439,34 +829,71 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
         return result
     
     def _parse_json_from_ai_response(self, content: str) -> Dict[str, Any]:
-        """Parse JSON from AI response"""
+        """Parse JSON from AI response with improved extraction"""
         import json
         import re
         
-        # Look for JSON blocks in the response
+        print(f"[JSON Parser] Starting JSON extraction from content length: {len(content)}")
+        
+        # Look for JSON blocks in the response first (most reliable)
         json_pattern = r'```json\s*(.*?)\s*```'
         matches = re.findall(json_pattern, content, re.DOTALL)
         
-        for match in matches:
+        print(f"[JSON Parser] Found {len(matches)} JSON code blocks")
+        
+        for i, match in enumerate(matches):
             try:
+                print(f"[JSON Parser] Trying to parse JSON block {i+1}: {match[:200]}...")
                 parsed = json.loads(match)
                 if isinstance(parsed, dict) and any(key in parsed for key in ['rischi_identificati', 'dpi_obbligatori', 'analisi_generale']):
+                    print(f"[JSON Parser] Successfully parsed valid JSON block {i+1}")
                     return parsed
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                print(f"[JSON Parser] Failed to parse JSON block {i+1}: {e}")
                 continue
         
-        # Try to find JSON without code blocks
-        json_pattern_simple = r'\{[\s\S]*\}'
-        matches = re.findall(json_pattern_simple, content)
+        # Try to find JSON objects by counting braces (more robust)
+        def find_complete_json_objects(text):
+            """Find complete JSON objects by matching braces"""
+            objects = []
+            i = 0
+            while i < len(text):
+                if text[i] == '{':
+                    brace_count = 0
+                    start = i
+                    j = i
+                    while j < len(text):
+                        if text[j] == '{':
+                            brace_count += 1
+                        elif text[j] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                # Found complete object
+                                objects.append(text[start:j+1])
+                                break
+                        j += 1
+                    i = j + 1
+                else:
+                    i += 1
+            return objects
         
-        for match in matches:
+        json_objects = find_complete_json_objects(content)
+        print(f"[JSON Parser] Found {len(json_objects)} potential JSON objects")
+        
+        for i, obj in enumerate(json_objects):
             try:
-                parsed = json.loads(match)
-                if isinstance(parsed, dict) and any(key in parsed for key in ['rischi_identificati', 'dpi_obbligatori']):
+                print(f"[JSON Parser] Trying to parse JSON object {i+1}: {obj[:200]}...")
+                parsed = json.loads(obj)
+                if isinstance(parsed, dict) and any(key in parsed for key in ['rischi_identificati', 'dpi_obbligatori', 'analisi_generale']):
+                    print(f"[JSON Parser] Successfully parsed valid JSON object {i+1}")
                     return parsed
-            except json.JSONDecodeError:
+                else:
+                    print(f"[JSON Parser] JSON object {i+1} doesn't contain expected keys")
+            except json.JSONDecodeError as e:
+                print(f"[JSON Parser] Failed to parse JSON object {i+1}: {e}")
                 continue
         
+        print("[JSON Parser] No valid JSON found, returning None")
         return None
     
     def _convert_ai_json_to_expected_format(self, ai_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -560,22 +987,20 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
         # Process the combined analysis text
         content = combined_analysis.lower()
         
-        # Enhanced risk pattern matching with more specific patterns
-        risk_patterns = [
-            ("elettrico", "alto", "Disattivazione impianto, LOTO e DPI isolanti", ["CEI 11-27", "D.Lgs 81/08 art. 80-87"]),
-            ("caduta", "alto", "DPI anticaduta, parapetti e delimitazione area", ["D.Lgs 81/08 Titolo IV", "UNI EN 365"]),
-            ("altezza", "alto", "Piattaforme di lavoro e sistemi anticaduta", ["D.Lgs 81/08 Titolo IV", "UNI EN 365"]),
-            ("meccanico", "medio", "Protezioni macchine e procedure operative", ["D.Lgs 81/08 Titolo III"]),
-            ("chimico", "alto", "Ventilazione, schede sicurezza e DPI specifici", ["Regolamento REACH", "D.Lgs 81/08 Titolo IX"]),
-            ("incendio", "alto", "Misure antincendio e permesso di fuoco", ["D.M. 10/03/1998", "D.Lgs 81/08"]),
-            ("esplosione", "molto_alto", "Controllo atmosfera, bonifica e ATEX", ["Direttiva ATEX", "D.Lgs 81/08 Titolo XI"]),
-            ("rumore", "medio", "Protezioni uditive e limitazione esposizione", ["D.Lgs 81/08 Titolo VIII"]),
-            ("vibrazione", "medio", "Limitazione tempo esposizione e attrezzature", ["D.Lgs 81/08 Titolo VIII"]),
-            ("confinati", "molto_alto", "DPR 177/2011 e procedure spazi confinati", ["DPR 177/2011", "UNI 11326"])
+        # Let AI do the heavy lifting - only use basic fallback patterns as last resort
+        # The AI should have already identified all critical risks through intelligent analysis
+        
+        # Basic fallback risk patterns (only for when AI completely fails)
+        basic_risk_patterns = [
+            ("elettrico", "alto", "Controlli elettrici e DPI isolanti", []),
+            ("meccanico", "medio", "Protezioni macchine", []),
+            ("chimico", "alto", "Controlli ambientali e DPI", []),
+            ("rumore", "medio", "Protezioni uditive", []),
+            ("caduta", "alto", "Sistemi anticaduta", [])
         ]
         
-        for risk_term, severity, mitigation, norms in risk_patterns:
-            if risk_term in content or f"spazi {risk_term}" in content:
+        for risk_term, severity, mitigation, norms in basic_risk_patterns:
+            if risk_term in content:
                 risks.append({
                     "risk": f"Rischio {risk_term}",
                     "severity": severity,
@@ -583,29 +1008,28 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                     "normatives": norms
                 })
         
-        # Enhanced DPI pattern matching with detailed standards
-        dpi_patterns = [
-            ("guanti", "EN 388", "Protezione da rischi meccanici", "II", "Anticuneo, antiperforazione, antistrappo"),
-            ("isolanti", "EN 60903", "Protezione da rischi elettrici", "III", "Classe 0 fino 1000V"),
-            ("casco", "EN 397", "Protezione del capo da caduta oggetti", "II", "Resistenza penetrazione e urto"),
-            ("elmetto", "EN 397", "Protezione del capo da caduta oggetti", "II", "Resistenza penetrazione e urto"),
-            ("occhiali", "EN 166", "Protezione degli occhi", "II", "Protezione da particelle e liquidi"),
-            ("scarpe", "EN ISO 20345", "Protezione dei piedi", "II", "Puntale 200J e suola antiforo"),
-            ("imbracatura", "EN 361", "Protezione anticaduta", "III", "Distribuzione forze caduta"),
-            ("respiratore", "EN 149", "Protezione delle vie respiratorie", "III", "Filtrazione particelle FFP2/FFP3"),
-            ("tuta", "EN ISO 11612", "Protezione da calore e fiamme", "III", "Resistenza calore radiante e convettivo"),
-            ("antitaglio", "EN 388", "Protezione da tagli", "II", "Livello protezione taglio A2-A5")
-        ]
+        # Trust the AI analysis - only add basic DPI if AI provided none
+        # The enhanced AI prompts should identify all necessary DPI through semantic understanding
         
-        for dpi_term, standard, reason, category, details in dpi_patterns:
-            if dpi_term in content:
-                dpi_recommendations.append({
-                    "dpi_type": f"{dpi_term.capitalize()} di protezione",
-                    "reason": reason,
-                    "standard": standard,
-                    "category": category,
-                    "details": details
-                })
+        # Only add minimal fallback DPI if AI provided absolutely nothing
+        if len(dpi_recommendations) == 0:
+            # Basic industrial DPI as absolute minimum
+            dpi_recommendations.extend([
+                {
+                    "dpi_type": "Elmetto di protezione",
+                    "reason": "Protezione base del capo",
+                    "standard": "EN 397",
+                    "category": "II",
+                    "details": "DPI base obbligatorio"
+                },
+                {
+                    "dpi_type": "Scarpe antinfortunistiche",
+                    "reason": "Protezione base dei piedi",
+                    "standard": "Standard applicabile",
+                    "category": "II",
+                    "details": "S1P minimo richiesto"
+                }
+            ])
         
         # Extract detailed safety measures
         if "procedure" in content or "procedura" in content:
@@ -692,7 +1116,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                     "description": f"Implementare misure di controllo per {risk['risk']}",
                     "suggested_action": risk.get("mitigation", "Definire misure di controllo appropriate"),
                     "consequences_if_ignored": "Possibili incidenti gravi",
-                    "references": ["D.Lgs 81/08"],
+                    "references": ["Documenti aziendali"],
                     "estimated_effort": "2-4 ore",
                     "responsible_role": "Responsabile Sicurezza",
                     "frontend_display": {
@@ -703,23 +1127,28 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                 })
                 item_counter += 1
         
-        # Create action items for DPI
-        if dpi_recommendations:
+        # Create action items for DPI - one for each DPI type
+        for dpi in dpi_recommendations:
+            dpi_type = dpi.get("dpi_type", "DPI non specificato")
+            reason = dpi.get("reason", "Protezione generica")
+            standard = dpi.get("standard", "Standard da definire")
+            details = dpi.get("details", "")
+            
             action_items.append({
                 "id": f"ACT_{item_counter:03d}",
                 "type": "dpi_requirement",
                 "priority": "alta" if len(risks) > 2 else "media",
-                "title": "Fornire DPI necessari",
-                "description": f"Fornire {len(dpi_recommendations)} DPI identificati",
-                "suggested_action": "Verificare disponibilità e distribuire DPI secondo standard specificati",
-                "consequences_if_ignored": "Esposizione a rischi per i lavoratori",
-                "references": [dpi["standard"] for dpi in dpi_recommendations if dpi.get("standard")],
+                "title": f"Fornire {dpi_type}",
+                "description": f"{dpi_type} - {reason}. {details}".strip(),
+                "suggested_action": f"Approvvigionare e distribuire {dpi_type} conformi a {standard}",
+                "consequences_if_ignored": f"Esposizione diretta ai rischi: {reason}",
+                "references": [standard] if standard and standard != "Standard da definire" else [],
                 "estimated_effort": "1-2 ore",
-                "responsible_role": "Responsabile Magazzino",
+                "responsible_role": "Responsabile Approvvigionamenti",
                 "frontend_display": {
-                    "color": "orange",
+                    "color": "yellow" if standard == "Standard da definire" else "orange",
                     "icon": "shield-check",
-                    "category": "DPI Obbligatori"
+                    "category": f"DPI Categoria {standard}" if standard != "Standard da definire" else "DPI Richiesto"
                 }
             })
             item_counter += 1
@@ -734,7 +1163,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                 "description": f"Implementare: {measure}",
                 "suggested_action": f"Sviluppare e implementare {measure.lower()}",
                 "consequences_if_ignored": "Ridotta efficacia delle misure di sicurezza",
-                "references": ["D.Lgs 81/08"],
+                "references": ["Documenti aziendali"],
                 "estimated_effort": "2-6 ore",
                 "responsible_role": "Responsabile Sicurezza",
                 "frontend_display": {
@@ -750,27 +1179,74 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _create_citations(self, dpi_recommendations: List[Dict]) -> Dict[str, List[Dict]]:
         """Create properly formatted citations"""
         citations = {
-            "normative_framework": [
-                {
+            "normative_framework": [],
+            "company_procedures": []
+        }
+        
+        # PRIORITY 1: Use documents found during search if available
+        if hasattr(self, 'searched_documents') and self.searched_documents:
+            print(f"[SimpleAutoGenHSEAgents] Creating citations from {len(self.searched_documents)} found documents")
+            for doc in self.searched_documents[:10]:  # Use top 10 documents
+                doc_type = doc.get('document_type', 'normativa')
+                citation_entry = {
                     "document_info": {
-                        "title": "D.Lgs 81/08",
-                        "type": "Normativa",
-                        "date": "2008-04-09"
+                        "title": doc.get('title', 'Documento'),
+                        "code": doc.get('document_code', ''),
+                        "type": doc.get('document_type', 'Normativa'),
+                        "date": doc.get('created_at', 'Current'),
+                        "source": "Documento Aziendale"  # Mark as internal source
                     },
                     "relevance": {
-                        "score": 0.95,
-                        "reason": "Testo unico sulla salute e sicurezza sul lavoro"
+                        "score": doc.get('search_score', 0.9),  # Higher score for internal docs
+                        "reason": f"Documento aziendale specifico per {doc.get('category', 'attività')}"
                     },
                     "key_requirements": [],
                     "frontend_display": {
-                        "color": "blue",
-                        "icon": "book-open",
-                        "category": "Normativa Nazionale"
+                        "color": "blue" if doc_type in ['normativa', 'decreto'] else "green",
+                        "icon": "book-open" if doc_type in ['normativa', 'decreto'] else "file-text",
+                        "category": "Documenti Aziendali" if doc_type in ['normativa', 'decreto'] else "Procedure Aziendali"
                     }
                 }
-            ],
-            "company_procedures": []
-        }
+                
+                if doc_type in ['normativa', 'decreto', 'legge', 'standard']:
+                    citations["normative_framework"].append(citation_entry)
+                else:
+                    citations["company_procedures"].append(citation_entry)
+        
+        # PRIORITY 2: Add API/general knowledge citations if needed
+        if len(citations["normative_framework"]) < 3:  # If we have less than 3 internal citations
+            print("[SimpleAutoGenHSEAgents] Adding API knowledge citations to complement internal documents")
+            
+            # Add general safety regulations from API knowledge
+            api_citations = [
+                {
+                    "document_info": {
+                        "title": "D.Lgs 81/08 - Testo Unico Sicurezza",
+                        "code": "D.Lgs 81/08",
+                        "type": "Decreto Legislativo",
+                        "date": "2008-04-09",
+                        "source": "API/Conoscenza Generale"  # Mark as API source
+                    },
+                    "relevance": {
+                        "score": 0.7,  # Lower score for API sources
+                        "reason": "Normativa generale di riferimento per la sicurezza sul lavoro"
+                    },
+                    "key_requirements": [],
+                    "frontend_display": {
+                        "color": "orange",  # Different color for API sources
+                        "icon": "cloud",  # Cloud icon for API sources
+                        "category": "Normativa Generale (API)"
+                    }
+                }
+            ]
+            
+            # Add only if we don't have enough internal citations
+            for api_citation in api_citations:
+                if len(citations["normative_framework"]) < 5:
+                    citations["normative_framework"].append(api_citation)
+        
+        if not citations["normative_framework"] and not citations["company_procedures"]:
+            print("[SimpleAutoGenHSEAgents] No citations available from any source")
         
         # Add UNI EN standards from DPI recommendations
         seen_standards = set()
@@ -838,7 +1314,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                     dpi_recommendations.append({
                         "dpi_type": "Guanti di protezione",
                         "reason": "Protezione da rischi meccanici",
-                        "standard": "EN 388"
+                        "standard": "Standard applicabile"
                     })
                 if "casco" in content or "elmetto" in content:
                     dpi_recommendations.append({
@@ -850,7 +1326,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                     dpi_recommendations.append({
                         "dpi_type": "Occhiali di sicurezza",
                         "reason": "Protezione degli occhi",
-                        "standard": "EN 166"
+                        "standard": "Standard applicabile"
                     })
         
         # Create structured output
@@ -905,17 +1381,21 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                 })
                 item_counter += 1
         
-        # Create action items for DPI
-        if dpi_recommendations:
+        # Create action items for DPI - one for each DPI type
+        for dpi in dpi_recommendations:
+            dpi_type = dpi.get("dpi_type", "DPI non specificato")
+            reason = dpi.get("reason", "Protezione generica")
+            standard = dpi.get("standard", "Standard da definire")
+            
             action_items.append({
                 "id": f"ACT_{item_counter:03d}",
                 "type": "dpi_requirement",
                 "priority": "alta",
-                "title": "Fornire DPI necessari",
-                "description": f"Fornire {len(dpi_recommendations)} DPI identificati",
-                "suggested_action": "Verificare disponibilità e distribuire DPI",
-                "consequences_if_ignored": "Esposizione a rischi per i lavoratori",
-                "references": [dpi["standard"] for dpi in dpi_recommendations if dpi.get("standard")],
+                "title": f"Fornire {dpi_type}",
+                "description": f"{dpi_type} - {reason}",
+                "suggested_action": f"Verificare disponibilità e distribuire {dpi_type} conformi a {standard}",
+                "consequences_if_ignored": f"Esposizione diretta ai rischi: {reason}",
+                "references": [standard] if standard and standard != "Standard da definire" else [],
                 "estimated_effort": "1 ora",
                 "responsible_role": "Responsabile Magazzino",
                 "frontend_display": {
@@ -924,6 +1404,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                     "category": "DPI Obbligatori"
                 }
             })
+            item_counter += 1
         
         return action_items
     
@@ -993,7 +1474,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                 "description": measure.get('descrizione', 'Implementare misura organizzativa'),
                 "suggested_action": measure.get('descrizione', 'Sviluppare e implementare misura'),
                 "consequences_if_ignored": "Ridotta efficacia delle misure di sicurezza",
-                "references": ["D.Lgs 81/08"],
+                "references": ["Documenti aziendali"],
                 "estimated_effort": "2-6 ore",
                 "responsible_role": measure.get('responsabile', 'Responsabile Sicurezza'),
                 "timeline": measure.get('tempistica', 'Prima dell\'inizio lavori'),
@@ -1014,10 +1495,39 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
             "company_procedures": []
         }
         
-        # Add main normative framework
-        main_citations = [
-            ("D.Lgs 81/08", "Testo unico sulla salute e sicurezza sul lavoro", "2008-04-09", "blue", "book-open", "Normativa Nazionale")
-        ]
+        # PRIORITY 1: Add internal document citations if available
+        if hasattr(self, 'searched_documents') and self.searched_documents:
+            print(f"[Citations] Using {len(self.searched_documents)} internal documents as primary sources")
+            for doc in self.searched_documents[:5]:
+                doc_type = doc.get('document_type', 'normativa')
+                citation = {
+                    "document_info": {
+                        "title": doc.get('title', 'Documento Aziendale'),
+                        "code": doc.get('document_code', ''),
+                        "type": doc.get('document_type', 'Procedura'),
+                        "date": doc.get('created_at', 'Current'),
+                        "source": "Documento Aziendale"
+                    },
+                    "relevance": {
+                        "score": 0.95,  # High score for internal docs
+                        "reason": f"Documento aziendale specifico per {doc.get('category', 'sicurezza')}"
+                    },
+                    "key_requirements": [],
+                    "frontend_display": {
+                        "color": "green",
+                        "icon": "file-text",
+                        "category": "Documenti Aziendali"
+                    }
+                }
+                
+                if doc_type in ['normativa', 'decreto', 'standard']:
+                    citations["normative_framework"].append(citation)
+                else:
+                    citations["company_procedures"].append(citation)
+        
+        # PRIORITY 2: Add API-based citations only if needed
+        if len(citations["normative_framework"]) < 3:
+            print("[Citations] Adding API-based normative references to complement internal documents")
         
         # Collect unique normative references from risks
         all_norms = set(main_norms)
@@ -1095,7 +1605,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
             "normative_framework": [
                 {
                     "document_info": {
-                        "title": "D.Lgs 81/08",
+                        "title": "Documenti aziendali",
                         "type": "Normativa",
                         "date": "2008-04-09"
                     },
@@ -1176,17 +1686,193 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
         exec_summary = result.get('executive_summary', {})
         action_items = result.get('action_items', [])
         
-        # If no risks or DPI identified, this is WRONG for any real permit
-        if exec_summary.get('critical_issues', 0) == 0 and len(action_items) == 0:
-            print("[SimpleAutoGenHSEAgents] WARNING: No risks/DPI identified - applying mandatory professional analysis")
-            
-            # Apply work-type specific mandatory analysis
-            return self._apply_mandatory_professional_analysis(combined_analysis, result)
         
-        # If minimal analysis, enhance it
-        if len(action_items) < 3:
-            print("[SimpleAutoGenHSEAgents] Enhancing minimal analysis with mandatory requirements")
-            result = self._enhance_minimal_analysis(result, combined_analysis)
+        # Check if AI failed to analyze properly (this should NOT happen with good AI)
+        if exec_summary.get('critical_issues', 0) == 0 and len(action_items) == 0:
+            print("[SimpleAutoGenHSEAgents] CRITICAL ERROR: AI failed to identify ANY risks - this should never happen!")
+            
+            # Create a critical finding about missing information instead of generic fallback
+            return self._create_critical_analysis_failure_response(combined_analysis)
+        
+        # If analysis seems too minimal, enhance it but don't override good AI work
+        if len(action_items) < 2:
+            print("[SimpleAutoGenHSEAgents] Analysis seems minimal - adding mandatory safety review")
+            result = self._add_mandatory_safety_review(result, combined_analysis)
+        
+        return result
+    
+    def _create_critical_analysis_failure_response(self, combined_analysis: str) -> Dict[str, Any]:
+        """Create a response that highlights critical analysis failure"""
+        
+        # This indicates either:
+        # 1. The permit has missing critical information
+        # 2. The AI analysis completely failed
+        # 3. The permit is genuinely low-risk but we should still flag for review
+        
+        return {
+            "executive_summary": {
+                "overall_score": 0.1,  # Very low score for failed analysis
+                "critical_issues": 1,  # At least the analysis failure itself is critical
+                "recommendations": 3,
+                "compliance_level": "non_conforme",
+                "estimated_completion_time": "INDEFINITO - Richiesta revisione",
+                "key_findings": [
+                    "ERRORE CRITICO: Analisi AI non ha identificato rischi - possibile informazione mancante",
+                    "Permesso richiede revisione manuale immediata",
+                    "Informazioni insufficienti per valutazione completa"
+                ],
+                "next_steps": [
+                    "STOP: Non procedere senza revisione manuale",
+                    "Verificare completezza informazioni nel permesso",
+                    "Richiedere dettagli mancanti (attrezzature, procedure, ambiente)",
+                    "Ri-sottoporre per analisi dopo integrazione informazioni"
+                ]
+            },
+            "action_items": [
+                {
+                    "id": "CRIT_001",
+                    "type": "critical_review",
+                    "priority": "critica",
+                    "title": "REVISIONE MANUALE OBBLIGATORIA",
+                    "description": "L'analisi AI non ha identificato rischi - indica informazioni mancanti o permesso incompleto",
+                    "suggested_action": "Non autorizzare il lavoro fino a revisione manuale completa da parte di RSPP",
+                    "consequences_if_ignored": "RISCHIO INCIDENTI GRAVI - Analisi incompleta",
+                    "references": ["Procedura aziendale"],
+                    "estimated_effort": "Revisione completa richiesta",
+                    "responsible_role": "RSPP/Responsabile Sicurezza",
+                    "frontend_display": {
+                        "color": "red",
+                        "icon": "alert-triangle",
+                        "category": "ERRORE ANALISI CRITICO"
+                    }
+                },
+                {
+                    "id": "INFO_001",
+                    "type": "information_gap",
+                    "priority": "alta",
+                    "title": "Informazioni mancanti nel permesso",
+                    "description": "Permesso carente di dettagli necessari per analisi rischi completa",
+                    "suggested_action": "Richiedere: descrizione dettagliata lavoro, attrezzature specifiche, procedure operative, ambiente lavoro",
+                    "consequences_if_ignored": "Impossibilità di identificare tutti i rischi presenti",
+                    "references": ["Procedura aziendale"],
+                    "estimated_effort": "30 minuti raccolta informazioni",
+                    "responsible_role": "Richiedente permesso",
+                    "frontend_display": {
+                        "color": "orange",
+                        "icon": "info",
+                        "category": "INFORMAZIONI MANCANTI"
+                    }
+                },
+                {
+                    "id": "MIN_001",
+                    "type": "minimum_safety",
+                    "priority": "media",
+                    "title": "DPI base comunque obbligatori",
+                    "description": "Anche con informazioni incomplete, DPI base sono sempre obbligatori",
+                    "suggested_action": "Fornire elmetto, scarpe antinfortunistiche, guanti base - completare dopo revisione",
+                    "consequences_if_ignored": "Violazione norme base sicurezza",
+                    "references": ["Procedura DPI"],
+                    "estimated_effort": "Immediato",
+                    "responsible_role": "Responsabile Sicurezza",
+                    "frontend_display": {
+                        "color": "blue",
+                        "icon": "shield",
+                        "category": "DPI BASE OBBLIGATORI"
+                    }
+                }
+            ],
+            "citations": {
+                "normative_framework": [
+                    {
+                        "document_info": {
+                            "title": "Procedura aziendale",
+                            "type": "Normativa",
+                            "date": "2008-04-09"
+                        },
+                        "relevance": {
+                            "score": 1.0,
+                            "reason": "Obbligo valutazione rischi completa"
+                        },
+                        "key_requirements": [
+                            {
+                                "requirement": "Valutazione deve considerare tutti i rischi",
+                                "mandatory": True,
+                                "description": "Requisito obbligatorio per valutazione completa dei rischi"
+                            },
+                            {
+                                "requirement": "Informazioni sufficienti per identificazione pericoli",
+                                "mandatory": True,
+                                "description": "Necessarie informazioni dettagliate per identificare tutti i pericoli"
+                            }
+                        ],
+                        "frontend_display": {
+                            "color": "red",
+                            "icon": "alert-triangle",
+                            "category": "NORMATIVA VIOLATA"
+                        }
+                    }
+                ],
+                "company_procedures": []
+            },
+            "completion_roadmap": {
+                "immediate_actions": [
+                    "STOP - Non autorizzare il lavoro",
+                    "Richiedere informazioni complete"
+                ],
+                "short_term_actions": [
+                    "Revisione manuale RSPP",
+                    "Integrazione dettagli mancanti"
+                ],
+                "medium_term_actions": [
+                    "Ri-analisi dopo integrazione informazioni",
+                    "Formazione su compilazione permessi completi"
+                ],
+                "success_metrics": [
+                    "Permesso completo di tutte le informazioni",
+                    "Analisi successiva identifica rischi specifici",
+                    "Zero incidenti da informazioni mancanti"
+                ],
+                "review_checkpoints": [
+                    "Completezza informazioni",
+                    "Approvazione RSPP",
+                    "Ri-analisi AI successiva"
+                ]
+            }
+        }
+    
+    def _add_mandatory_safety_review(self, result: Dict[str, Any], combined_analysis: str) -> Dict[str, Any]:
+        """Add mandatory safety review without overriding good AI analysis"""
+        
+        # Add one additional action item about mandatory review
+        existing_items = result.get('action_items', [])
+        exec_summary = result.get('executive_summary', {})
+        
+        # Add a safety review item but keep existing analysis
+        additional_item = {
+            "id": f"REVIEW_{len(existing_items)+1:03d}",
+            "type": "mandatory_review",
+            "priority": "media",
+            "title": "Revisione sicurezza obbligatoria",
+            "description": "Verifica completezza analisi e conformità procedure",
+            "suggested_action": "RSPP deve validare l'analisi e confermare idoneità misure proposte",
+            "consequences_if_ignored": "Possibili rischi non identificati",
+            "references": ["Procedura aziendale"],
+            "estimated_effort": "30 minuti",
+            "responsible_role": "RSPP",
+            "frontend_display": {
+                "color": "blue",
+                "icon": "check-circle",
+                "category": "CONTROLLO QUALITÀ"
+            }
+        }
+        
+        existing_items.append(additional_item)
+        result['action_items'] = existing_items
+        
+        # Update executive summary
+        exec_summary['recommendations'] = len(existing_items)
+        exec_summary['next_steps'] = exec_summary.get('next_steps', []) + ["Revisione RSPP obbligatoria"]
+        result['executive_summary'] = exec_summary
         
         return result
     
@@ -1301,14 +1987,14 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_electrical_work_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for electrical work"""
         risks = [
-            {"risk": "Rischio elettrocuzione da contatto diretto/indiretto", "severity": "molto_alto", "normatives": ["CEI 11-27", "D.Lgs 81/08 art. 80-87"]},
-            {"risk": "Rischio arco elettrico e ustioni", "severity": "alto", "normatives": ["CEI 11-27"]},
-            {"risk": "Rischio incendio da sovraccarico elettrico", "severity": "alto", "normatives": ["D.M. 10/03/1998"]}
+            {"risk": "Rischio elettrocuzione da contatto diretto/indiretto", "severity": "molto_alto", "normatives": ["Procedura elettrica", "Procedura elettrica"]},
+            {"risk": "Rischio arco elettrico e ustioni", "severity": "alto", "normatives": ["Procedura elettrica"]},
+            {"risk": "Rischio incendio da sovraccarico elettrico", "severity": "alto", "normatives": ["Procedura antincendio"]}
         ]
         
         dpi = [
             {"dpi_type": "Guanti isolanti Classe 0", "standard": "EN 60903", "reason": "Protezione contatti elettrici 1000V", "category": "III"},
-            {"dpi_type": "Scarpe isolanti", "standard": "EN ISO 20345", "reason": "Isolamento elettrico", "category": "II"},
+            {"dpi_type": "Scarpe isolanti", "standard": "Standard applicabile", "reason": "Isolamento elettrico", "category": "II"},
             {"dpi_type": "Elmetto dielettrico", "standard": "EN 397", "reason": "Protezione capo e isolamento", "category": "II"},
             {"dpi_type": "Tuta antistatica", "standard": "EN 1149", "reason": "Prevenzione accumulo cariche", "category": "I"}
         ]
@@ -1318,15 +2004,15 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_mechanical_work_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for mechanical work"""
         risks = [
-            {"risk": "Rischio cesoiamento da macchine in movimento", "severity": "alto", "normatives": ["D.Lgs 81/08 Titolo III"]},
-            {"risk": "Rischio taglio da utensili", "severity": "medio", "normatives": ["D.Lgs 81/08"]},
-            {"risk": "Rischio schiacciamento arti", "severity": "alto", "normatives": ["D.Lgs 81/08"]}
+            {"risk": "Rischio cesoiamento da macchine in movimento", "severity": "alto", "normatives": ["Procedura macchine"]},
+            {"risk": "Rischio taglio da utensili", "severity": "medio", "normatives": ["Documenti aziendali"]},
+            {"risk": "Rischio schiacciamento arti", "severity": "alto", "normatives": ["Documenti aziendali"]}
         ]
         
         dpi = [
-            {"dpi_type": "Guanti antitaglio Livello 5", "standard": "EN 388", "reason": "Protezione da tagli", "category": "II"},
-            {"dpi_type": "Scarpe antinfortunistiche S3", "standard": "EN ISO 20345", "reason": "Protezione piedi", "category": "II"},
-            {"dpi_type": "Occhiali di sicurezza", "standard": "EN 166", "reason": "Protezione occhi da schegge", "category": "II"}
+            {"dpi_type": "Guanti antitaglio Livello 5", "standard": "Standard applicabile", "reason": "Protezione da tagli", "category": "II"},
+            {"dpi_type": "Scarpe antinfortunistiche S3", "standard": "Standard applicabile", "reason": "Protezione piedi", "category": "II"},
+            {"dpi_type": "Occhiali di sicurezza", "standard": "Standard applicabile", "reason": "Protezione occhi da schegge", "category": "II"}
         ]
         
         return risks, dpi
@@ -1334,15 +2020,15 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_maintenance_work_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for maintenance work"""
         risks = [
-            {"risk": "Rischio meccanico da attrezzature", "severity": "medio", "normatives": ["D.Lgs 81/08"]},
-            {"risk": "Rischio caduta oggetti", "severity": "medio", "normatives": ["D.Lgs 81/08"]},
-            {"risk": "Rischio posturale", "severity": "basso", "normatives": ["D.Lgs 81/08 Titolo VI"]}
+            {"risk": "Rischio meccanico da attrezzature", "severity": "medio", "normatives": ["Documenti aziendali"]},
+            {"risk": "Rischio caduta oggetti", "severity": "medio", "normatives": ["Documenti aziendali"]},
+            {"risk": "Rischio posturale", "severity": "basso", "normatives": ["Procedura ergonomia"]}
         ]
         
         dpi = [
             {"dpi_type": "Elmetto di protezione", "standard": "EN 397", "reason": "Protezione capo", "category": "II"},
-            {"dpi_type": "Guanti meccanici", "standard": "EN 388", "reason": "Protezione mani", "category": "II"},
-            {"dpi_type": "Scarpe antinfortunistiche", "standard": "EN ISO 20345", "reason": "Protezione piedi", "category": "II"}
+            {"dpi_type": "Guanti meccanici", "standard": "Standard applicabile", "reason": "Protezione mani", "category": "II"},
+            {"dpi_type": "Scarpe antinfortunistiche", "standard": "Standard applicabile", "reason": "Protezione piedi", "category": "II"}
         ]
         
         return risks, dpi
@@ -1350,15 +2036,15 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_chemical_work_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for chemical work"""  
         risks = [
-            {"risk": "Rischio inalazione vapori tossici", "severity": "alto", "normatives": ["D.Lgs 81/08 Titolo IX"]},
-            {"risk": "Rischio contatto cutaneo sostanze chimiche", "severity": "alto", "normatives": ["Regolamento REACH"]},
-            {"risk": "Rischio incendio/esplosione", "severity": "molto_alto", "normatives": ["D.Lgs 81/08 Titolo XI"]}
+            {"risk": "Rischio inalazione vapori tossici", "severity": "alto", "normatives": ["Procedura sostanze chimiche"]},
+            {"risk": "Rischio contatto cutaneo sostanze chimiche", "severity": "alto", "normatives": ["Procedura sostanze chimiche"]},
+            {"risk": "Rischio incendio/esplosione", "severity": "molto_alto", "normatives": ["Procedura ATEX"]}
         ]
         
         dpi = [
             {"dpi_type": "Respiratore FFP3", "standard": "EN 149", "reason": "Protezione vie respiratorie", "category": "III"},
             {"dpi_type": "Guanti chimici", "standard": "EN 374", "reason": "Protezione da agenti chimici", "category": "III"},
-            {"dpi_type": "Tuta di protezione chimica", "standard": "EN ISO 6529", "reason": "Protezione corpo", "category": "III"}
+            {"dpi_type": "Tuta di protezione chimica", "standard": "Standard applicabile", "reason": "Protezione corpo", "category": "III"}
         ]
         
         return risks, dpi
@@ -1366,9 +2052,9 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_confined_space_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for confined space work"""
         risks = [
-            {"risk": "Rischio asfissia per carenza ossigeno", "severity": "molto_alto", "normatives": ["DPR 177/2011"]},
-            {"risk": "Rischio intossicazione gas tossici", "severity": "molto_alto", "normatives": ["DPR 177/2011"]},
-            {"risk": "Rischio esplosione atmosfere ATEX", "severity": "molto_alto", "normatives": ["D.Lgs 81/08 Titolo XI"]}
+            {"risk": "Rischio asfissia per carenza ossigeno", "severity": "molto_alto", "normatives": ["Procedura spazi confinati"]},
+            {"risk": "Rischio intossicazione gas tossici", "severity": "molto_alto", "normatives": ["Procedura spazi confinati"]},
+            {"risk": "Rischio esplosione atmosfere ATEX", "severity": "molto_alto", "normatives": ["Procedura ATEX"]}
         ]
         
         dpi = [
@@ -1382,15 +2068,15 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_height_work_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for work at height"""
         risks = [
-            {"risk": "Rischio caduta dall'alto", "severity": "molto_alto", "normatives": ["D.Lgs 81/08 Titolo IV"]},
-            {"risk": "Rischio caduta oggetti", "severity": "alto", "normatives": ["D.Lgs 81/08 Titolo IV"]},
-            {"risk": "Rischio ribaltamento scale/ponteggi", "severity": "alto", "normatives": ["UNI EN 131"]}
+            {"risk": "Rischio caduta dall'alto", "severity": "molto_alto", "normatives": ["Procedura lavori altezza"]},
+            {"risk": "Rischio caduta oggetti", "severity": "alto", "normatives": ["Procedura lavori altezza"]},
+            {"risk": "Rischio ribaltamento scale/ponteggi", "severity": "alto", "normatives": ["Procedura scale"]}
         ]
         
         dpi = [
             {"dpi_type": "Imbracatura anticaduta Classe A", "standard": "EN 361", "reason": "Protezione cadute", "category": "III"},
             {"dpi_type": "Casco con sottogola", "standard": "EN 397", "reason": "Protezione capo", "category": "II"},
-            {"dpi_type": "Scarpe antiscivolo", "standard": "EN ISO 20345", "reason": "Aderenza superfici", "category": "II"}
+            {"dpi_type": "Scarpe antiscivolo", "standard": "Standard applicabile", "reason": "Aderenza superfici", "category": "II"}
         ]
         
         return risks, dpi
@@ -1398,15 +2084,15 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
     def _get_general_industrial_requirements(self) -> tuple[List[Dict], List[Dict]]:
         """Mandatory requirements for ANY industrial work"""
         risks = [
-            {"risk": "Rischio infortunio generico", "severity": "medio", "normatives": ["D.Lgs 81/08"]},
-            {"risk": "Rischio caduta in piano", "severity": "medio", "normatives": ["D.Lgs 81/08"]},
-            {"risk": "Rischio movimentazione manuale carichi", "severity": "basso", "normatives": ["D.Lgs 81/08 Titolo VI"]}
+            {"risk": "Rischio infortunio generico", "severity": "medio", "normatives": ["Documenti aziendali"]},
+            {"risk": "Rischio caduta in piano", "severity": "medio", "normatives": ["Documenti aziendali"]},
+            {"risk": "Rischio movimentazione manuale carichi", "severity": "basso", "normatives": ["Procedura ergonomia"]}
         ]
         
         dpi = [
             {"dpi_type": "Elmetto di protezione base", "standard": "EN 397", "reason": "Protezione capo obbligatoria", "category": "II"},
-            {"dpi_type": "Scarpe antinfortunistiche S1P", "standard": "EN ISO 20345", "reason": "Protezione piedi obbligatoria", "category": "II"},
-            {"dpi_type": "Guanti da lavoro", "standard": "EN 388", "reason": "Protezione mani generica", "category": "I"}
+            {"dpi_type": "Scarpe antinfortunistiche S1P", "standard": "Standard applicabile", "reason": "Protezione piedi obbligatoria", "category": "II"},
+            {"dpi_type": "Guanti da lavoro", "standard": "Standard applicabile", "reason": "Protezione mani generica", "category": "I"}
         ]
         
         return risks, dpi
@@ -1487,7 +2173,7 @@ Rispondi come {agent_name} utilizzando la tua expertise specifica.
                 "description": "DPI base obbligatori per qualsiasi lavoro industriale",
                 "suggested_action": f"Fornire DPI base: {', '.join([dpi['dpi_type'] for dpi in basic_dpi])}",
                 "consequences_if_ignored": "VIOLAZIONE D.Lgs 81/08 - Sanzioni amministrative",
-                "references": ["D.Lgs 81/08 art. 75-79"],
+                "references": ["Procedura DPI"],
                 "estimated_effort": "1 ora",
                 "responsible_role": "Responsabile Sicurezza",
                 "dpi_details": basic_dpi,

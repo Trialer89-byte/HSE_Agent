@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 interface Tenant {
   id: number;
-  domain: string;
+  domain?: string;  // Make optional to match TenantInfo
   display_name: string;
   settings?: any;
 }
