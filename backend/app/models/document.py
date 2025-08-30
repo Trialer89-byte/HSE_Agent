@@ -28,6 +28,7 @@ class Document(Base, TimestampMixin, TenantMixin):
     vector_id = Column(String(100), index=True)
     
     # AI Processing
+    keywords = Column(JSON, default=[])  # Keywords extracted from full document
     relevance_score = Column(Float, default=0.0)
     
     # Versioning & Lifecycle

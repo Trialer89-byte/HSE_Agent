@@ -11,6 +11,7 @@ class WorkPermitBase(BaseModel):
     location: Optional[str] = Field(None, description="Ubicazione del lavoro")
     duration_hours: Optional[int] = Field(None, ge=1, le=168, description="Durata in ore")
     priority_level: str = Field(default="medium", description="Livello di priorità")
+    risk_mitigation_actions: List[str] = Field(default=[], description="Azioni di mitigazione dei rischi")
     custom_fields: Dict[str, Any] = Field(default={}, description="Campi personalizzati")
     tags: List[str] = Field(default=[], description="Tag di categorizzazione")
 
@@ -42,6 +43,7 @@ class WorkPermitUpdate(BaseModel):
     location: Optional[str] = None
     duration_hours: Optional[int] = Field(None, ge=1, le=168)
     priority_level: Optional[str] = None
+    risk_mitigation_actions: Optional[List[str]] = None
     custom_fields: Optional[Dict[str, Any]] = None
     tags: Optional[List[str]] = None
     status: Optional[str] = None
@@ -136,16 +138,7 @@ class PermitAnalysisResponse(BaseModel):
 
 class PermitAnalysisRequest(BaseModel):
     force_reanalysis: bool = Field(default=False, description="Forza ri-analisi anche se già esistente")
-    include_draft_documents: bool = Field(default=False, description="Includi documenti in bozza")
-    analysis_scope: List[str] = Field(default=["content", "risk", "compliance", "dpi"], description="Ambiti di analisi")
-    orchestrator: str = Field(default="advanced", description="Tipo di orchestratore: 'advanced' per analisi con metadata PostgreSQL, 'autogen' per AutoGen agents, 'fast' per analisi veloce diretta, 'mock' per simulazione")
-    
-    @validator('orchestrator')
-    def validate_orchestrator(cls, v):
-        allowed_orchestrators = ['advanced', 'autogen', 'fast', 'mock']
-        if v not in allowed_orchestrators:
-            raise ValueError(f'Orchestrator must be one of: {allowed_orchestrators}')
-        return v
+    # Enhanced AutoGen è l'unico orchestratore disponibile - parametro rimosso
 
 
 class PermitPreviewAnalysisRequest(BaseModel):
@@ -155,11 +148,12 @@ class PermitPreviewAnalysisRequest(BaseModel):
     work_type: str = Field(..., description="Tipo di lavoro")
     location: Optional[str] = Field(None, description="Ubicazione del lavoro")
     risk_level: Optional[str] = Field(None, description="Livello di rischio")
+    risk_mitigation_actions: Optional[List[str]] = Field(default=[], description="Azioni di mitigazione dei rischi")
     
     # Analysis options (optional for preview)
     analysis_type: Optional[str] = Field(default="comprehensive", description="Tipo di analisi")
     focus_areas: Optional[List[str]] = Field(default=[], description="Aree di focus specifiche")
-    orchestrator: str = Field(default="mock", description="Orchestratore per preview (mock consigliato per velocità)")
+    # Enhanced AutoGen è l'unico orchestratore disponibile - parametro rimosso
     
     @validator('work_type')
     def validate_work_type(cls, v):

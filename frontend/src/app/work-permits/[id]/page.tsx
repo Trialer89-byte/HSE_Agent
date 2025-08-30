@@ -21,6 +21,7 @@ interface WorkPermit {
   equipment_required?: string;
   hazards_identified?: string;
   control_measures?: string;
+  risk_mitigation_actions?: string[];  // New field
   created_by?: string;
   created_at: string;
   approved_by?: string;
@@ -338,6 +339,19 @@ export default function WorkPermitDetailPage() {
                     <div>
                       <h4 className="text-sm font-medium text-gray-700">Control Measures</h4>
                       <p className="mt-1 text-sm text-gray-600">{permit.control_measures}</p>
+                    </div>
+                  )}
+                  {permit.risk_mitigation_actions && permit.risk_mitigation_actions.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700">Azioni di Mitigazione dei Rischi</h4>
+                      <ul className="mt-1 text-sm text-gray-600 list-disc list-inside">
+                        {Array.isArray(permit.risk_mitigation_actions) 
+                          ? permit.risk_mitigation_actions.map((action, index) => (
+                              <li key={index}>{action}</li>
+                            ))
+                          : <li>{permit.risk_mitigation_actions}</li>
+                        }
+                      </ul>
                     </div>
                   )}
                 </div>

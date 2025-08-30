@@ -26,6 +26,7 @@ export default function NewWorkPermitPage() {
     equipment_required: '',
     hazards_identified: '',
     control_measures: '',
+    risk_mitigation_actions: '',  // New field
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -359,6 +360,24 @@ export default function NewWorkPermitPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Describe control measures to mitigate risks"
                 />
+              </div>
+              
+              <div className="mb-4">
+                <label htmlFor="risk_mitigation_actions" className="block text-sm font-medium text-gray-700 mb-1">
+                  Azioni di Mitigazione dei Rischi
+                </label>
+                <textarea
+                  id="risk_mitigation_actions"
+                  name="risk_mitigation_actions"
+                  value={formData.risk_mitigation_actions}
+                  onChange={handleChange}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Descrivere le azioni specifiche per mitigare i rischi identificati (es. formazione specifica, supervisione aggiuntiva, controlli periodici, etc.)"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Le azioni di mitigazione verranno analizzate dagli agenti AI per verificare la conformità del permesso
+                </p>
               </div>
             </div>
 

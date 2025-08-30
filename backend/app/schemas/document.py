@@ -30,6 +30,7 @@ class DocumentResponse(DocumentBase):
     updated_at: datetime
     
     # AI fields
+    keywords: List[str] = Field(default_factory=list)
     relevance_score: float = 0.0
     
     class Config:
@@ -83,7 +84,6 @@ class DocumentSearchResult(BaseModel):
     category: str
     chunk_content: str
     search_score: float
-    ai_keywords: List[str] = Field(default_factory=list)  # This comes from Weaviate, not PostgreSQL
     
     class Config:
         from_attributes = True

@@ -141,6 +141,18 @@ class DocumentService:
             if not industry_sectors:
                 industry_sectors = ai_metadata.get("industry_sectors", [])
             
+            # Extract keywords from full document (AI only, no fallback)
+            keywords = ai_metadata.get("keywords", [])
+            
+            # If AI failed to extract keywords, fail the upload
+            if not keywords:
+                # Delete uploaded file
+                await self.storage_service.delete_file(file_path)
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Failed to extract keywords from document. Please ensure the document contains relevant HSE content or try again later."
+                )
+            
             # Create semantic chunks
             chunks = await self._create_semantic_chunks(
                 content, document_type, document_code
@@ -156,6 +168,7 @@ class DocumentService:
                 subcategory=subcategory,
                 scope=scope,
                 industry_sectors=industry_sectors or [],
+                keywords=keywords,
                 file_path=file_path,
                 file_hash=file_hash,
                 content_summary=content[:500] + "..." if len(content) > 500 else content,
@@ -186,28 +199,85 @@ class DocumentService:
                     timeout=300.0  # 5 minutes timeout for vector processing
                 )
             except asyncio.TimeoutError:
-                # Clean up on timeout
-                document.is_active = False
+                # Clean up on timeout - delete document and file
+                print(f"[DocumentService] Vector processing timed out for document {document.id}")
+                
+                # Delete document from database
+                self.db.delete(document)
                 self.db.commit()
+                
+                # Delete file from storage
+                await self.storage_service.delete_file(file_path)
+                
                 raise HTTPException(
                     status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                    detail="Document processing timed out. The document is too large or complex."
+                    detail="Document processing timed out. The document is too large or complex. Document has been removed."
+                )
+            except Exception as vector_error:
+                # Clean up on vector processing error
+                print(f"[DocumentService] Vector processing failed for document {document.id}: {str(vector_error)}")
+                
+                # Delete document from database
+                self.db.delete(document)
+                self.db.commit()
+                
+                # Delete file from storage
+                await self.storage_service.delete_file(file_path)
+                
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to process document vectors: {str(vector_error)}. Document has been removed."
                 )
             
-            # Store first chunk ID as vector_id
+            # Store first chunk ID as vector_id and calculate overall relevance score
             if chunk_ids:
                 document.vector_id = chunk_ids[0]
+                # Calculate overall document relevance score from chunks
+                if chunks:
+                    avg_relevance = sum(chunk.get("relevance_score", 0.0) for chunk in chunks) / len(chunks)
+                    document.relevance_score = round(avg_relevance, 2)
                 self.db.commit()
             
             return document
             
         except Exception as e:
-            # Cleanup on error
-            if 'file_path' in locals():
-                await self.storage_service.delete_file(file_path)
+            # Cleanup on error - delete partially uploaded document and file
+            cleanup_errors = []
+            
+            # Delete from database if document was created
+            if 'document' in locals() and document and document.id:
+                try:
+                    self.db.delete(document)
+                    self.db.commit()
+                    print(f"[DocumentService] Cleaned up database record for document {document.id}")
+                except Exception as db_error:
+                    cleanup_errors.append(f"Database cleanup failed: {str(db_error)}")
+                    self.db.rollback()
+            
+            # Delete file from storage if it was uploaded
+            if 'file_path' in locals() and file_path:
+                try:
+                    await self.storage_service.delete_file(file_path)
+                    print(f"[DocumentService] Cleaned up file from storage: {file_path}")
+                except Exception as storage_error:
+                    cleanup_errors.append(f"Storage cleanup failed: {str(storage_error)}")
+            
+            # Delete from vector database if chunks were added
+            if 'document_code' in locals() and document_code:
+                try:
+                    await self.vector_service.delete_document_chunks(document_code, tenant_id)
+                    print(f"[DocumentService] Cleaned up vector chunks for document {document_code}")
+                except Exception as vector_error:
+                    cleanup_errors.append(f"Vector cleanup failed: {str(vector_error)}")
+            
+            # Build error message
+            error_message = f"Failed to process document: {str(e)}"
+            if cleanup_errors:
+                error_message += f" (Cleanup errors: {'; '.join(cleanup_errors)})"
+            
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to process document: {str(e)}"
+                detail=error_message
             )
     
     async def _extract_text_content(self, file: UploadFile, file_extension: str) -> str:
@@ -268,23 +338,11 @@ class DocumentService:
         # Process chunks in parallel for keyword extraction and scoring
         import asyncio
         
-        async def enrich_chunk(chunk, index):
-            """Enrich a single chunk with keywords and relevance score"""
-            chunk["ai_keywords"] = self._extract_keywords(chunk["content"])
+        # Add relevance score to chunks without keywords
+        for chunk in chunks:
             chunk["relevance_score"] = self._calculate_relevance_score(chunk["content"])
-            return chunk
         
-        # Process chunks in batches to avoid overwhelming the system
-        batch_size = 10
-        enriched_chunks = []
-        
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
-            tasks = [enrich_chunk(chunk, idx) for idx, chunk in enumerate(batch, start=i)]
-            batch_results = await asyncio.gather(*tasks)
-            enriched_chunks.extend(batch_results)
-        
-        return enriched_chunks
+        return chunks
     
     def _legal_document_chunker(self, content: str, document_code: str) -> List[Dict[str, Any]]:
         """
@@ -406,45 +464,73 @@ class DocumentService:
         
         return chunks
     
-    def _extract_keywords(self, text: str) -> List[str]:
-        """
-        Extract keywords from text using simple heuristics
-        """
-        # HSE-specific keywords
-        hse_keywords = [
-            "sicurezza", "dpi", "rischio", "pericolo", "prevenzione", "protezione",
-            "emergenza", "evacuazione", "antincendio", "chimico", "tossico",
-            "inquinamento", "ambiente", "rifiuti", "emissioni", "salute",
-            "infortunio", "malattia", "professionale", "lavoro", "cantiere",
-            "manutenzione", "controllo", "verifica", "ispezione", "audit"
-        ]
-        
-        found_keywords = []
-        text_lower = text.lower()
-        
-        for keyword in hse_keywords:
-            if keyword in text_lower:
-                found_keywords.append(keyword)
-        
-        return found_keywords
     
     def _calculate_relevance_score(self, text: str) -> float:
         """
-        Calculate relevance score based on HSE content
+        Calculate relevance score - HSE documents start high with differentiation
         """
-        hse_terms = [
-            "sicurezza", "dpi", "rischio", "protezione", "emergenza",
-            "salute", "ambiente", "prevenzione", "controllo", "verifica"
-        ]
-        
+        if not text:
+            return 0.6  # Default good score for HSE context
+            
         text_lower = text.lower()
-        score = 0.0
         
-        for term in hse_terms:
+        # Start with high base score for HSE documents
+        score = 0.7
+        
+        # Premium terms that boost to excellent scores
+        premium_terms = {
+            "permesso di lavoro": 0.15, "work permit": 0.15,
+            "dpi": 0.12, "ppe": 0.12, "dispositivi protezione": 0.12,
+            "procedura sicurezza": 0.12, "safety procedure": 0.12,
+            "valutazione rischi": 0.12, "risk assessment": 0.12,
+            "lavori a caldo": 0.1, "hot work": 0.1,
+            "spazio confinato": 0.1, "confined space": 0.1,
+            "lavori elettrici": 0.1, "electrical work": 0.1,
+            "cei 11-27": 0.15, "dlgs 81": 0.15, "d.lgs 81": 0.15
+        }
+        
+        # Quality terms that add good value
+        quality_terms = {
+            "rischio": 0.08, "risk": 0.08, "hazard": 0.08,
+            "emergenza": 0.08, "emergency": 0.08,
+            "protezione": 0.06, "protection": 0.06,
+            "prevenzione": 0.06, "prevention": 0.06,
+            "sicurezza": 0.05, "safety": 0.05,
+            "controllo": 0.05, "control": 0.05,
+            "normativa": 0.07, "standard": 0.07,
+            "istruzione": 0.06, "procedure": 0.06
+        }
+        
+        # Count premium terms with higher impact
+        for term, weight in premium_terms.items():
             if term in text_lower:
-                score += 0.1
+                count = text_lower.count(term)
+                score += weight * min(count, 3)  # Cap at 3 occurrences
         
-        return min(score, 1.0)
+        # Count quality terms
+        for term, weight in quality_terms.items():
+            if term in text_lower:
+                count = text_lower.count(term)
+                score += weight * min(count, 2)  # Cap at 2 occurrences
+        
+        # Bonus for comprehensive HSE content
+        term_categories = 0
+        if any(term in text_lower for term in ["dpi", "ppe", "protezione"]):
+            term_categories += 1
+        if any(term in text_lower for term in ["rischio", "risk", "valutazione"]):
+            term_categories += 1
+        if any(term in text_lower for term in ["procedura", "istruzione", "normativa"]):
+            term_categories += 1
+        if any(term in text_lower for term in ["lavori", "work", "permesso"]):
+            term_categories += 1
+            
+        if term_categories >= 3:
+            score += 0.1  # Comprehensive bonus
+        elif term_categories >= 2:
+            score += 0.05  # Good coverage bonus
+        
+        # Ensure excellent scores for clearly HSE documents
+        return min(round(score, 3), 1.0)
     
     async def update_document_metadata(
         self,
@@ -539,6 +625,43 @@ class DocumentService:
             Document.document_code == document_code
         ).order_by(Document.version.desc()).all()
     
+    def enrich_search_results_with_keywords(
+        self,
+        search_results: List[Dict[str, Any]],
+        tenant_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich vector search results with keywords from PostgreSQL
+        """
+        if not search_results:
+            return search_results
+        
+        # Get unique document codes from search results
+        document_codes = list(set(result.get("document_code") for result in search_results if result.get("document_code")))
+        
+        if not document_codes:
+            return search_results
+        
+        # Fetch documents with keywords from PostgreSQL
+        documents = self.db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.document_code.in_(document_codes),
+            Document.is_active == True
+        ).all()
+        
+        # Create a mapping of document_code to keywords
+        keyword_map = {doc.document_code: doc.keywords for doc in documents}
+        
+        # Enrich search results with keywords
+        for result in search_results:
+            doc_code = result.get("document_code")
+            if doc_code and doc_code in keyword_map:
+                result["keywords"] = keyword_map[doc_code]
+            else:
+                result["keywords"] = []
+        
+        return search_results
+    
     async def delete_document(self, document_id: int, tenant_id: int) -> bool:
         """
         Delete document and its vector chunks
@@ -598,7 +721,8 @@ class DocumentService:
             "subcategory": "string o null - sottocategoria specifica se applicabile",
             "authority": "string o null - autorità/ente che ha emesso il documento se identificabile",
             "scope": "string - 'tenant' se specifico per l'azienda, 'global' se generico/normativo",
-            "industry_sectors": ["array di stringi - settori industriali applicabili (es: edilizia, manifatturiero, chimico, energia)"]
+            "industry_sectors": ["array di stringi - settori industriali applicabili (es: edilizia, manifatturiero, chimico, energia)"],
+            "keywords": ["array di massimo 15 parole chiave HSE rilevanti estratte dal documento (es: sicurezza, dpi, rischio, prevenzione, emergenza, formazione, manutenzione, controllo, verifica, ambiente, salute)"]
         }}
 
         Rispondi SOLO con il JSON, senza altri testi.
@@ -663,5 +787,6 @@ class DocumentService:
                 "subcategory": None,
                 "authority": None,
                 "scope": "tenant",
-                "industry_sectors": []
+                "industry_sectors": [],
+                "keywords": []
             }

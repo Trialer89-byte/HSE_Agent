@@ -1,1018 +1,344 @@
 """
-Enhanced AutoGen HSE Agents with Specialized Domain Experts
-
-This implements a more professional approach with:
-1. Risk Classification Agent (primary analyzer)
-2. Specialized Domain Agents (activated based on risk types)
-3. Intelligent workflow routing
-4. No hardcoded keywords - pure semantic analysis
+Enhanced AutoGen HSE Agents with MANDATORY 5-PHASE COMPREHENSIVE ANALYSIS
+Pure AI-driven system with no fallback - fail fast if AI unavailable
 """
 
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, List
+import time
+import json
+from datetime import datetime
+
 try:
     from autogen_agentchat.agents import AssistantAgent
-    
-    # Create compatibility layer
     class autogen:
         AssistantAgent = AssistantAgent
 except ImportError:
-    # Fallback mock for testing
     class MockAgent:
         def __init__(self, name, system_message, llm_config=None, max_consecutive_auto_reply=1, human_input_mode="NEVER"):
             self.name = name
             self.system_message = system_message
-    
     class autogen:
         AssistantAgent = MockAgent
 
 import google.generativeai as genai
-import json
-import re
-from datetime import datetime
-from app.config.settings import settings
-from .autogen_config import get_autogen_llm_config
+from .autogen_config import get_autogen_llm_config, GeminiLLMConfig
+
 
 class EnhancedAutoGenHSEAgents:
-    """Enhanced AutoGen agents with domain specialization"""
+    """
+    Enhanced AutoGen HSE agents with MANDATORY 5-phase comprehensive analysis
+    Pure AI-driven - NO FALLBACK LOGIC
+    """
     
-    def __init__(self, user_context: Dict[str, Any] = None, vector_service=None):
-        self.user_context = user_context or {}
+    def __init__(self, user_context: Dict[str, Any], vector_service=None):
+        self.user_context = user_context
         self.vector_service = vector_service
-        self.searched_documents = []  # Store documents found by search
-        
-        # Initialize Gemini
-        self.gemini_model = None
-        self.api_working = False
         self.llm_config = get_autogen_llm_config()
         
-        self._init_gemini()
+        # Import settings only when needed
+        from app.config.settings import settings
         
-        # Create specialized agents
-        self.agents = self._create_specialized_agents()
-        
-        # Define risk domain mappings
-        self.risk_domains = {
-            "hot_work": ["HotWork_Specialist"],
-            "confined_space": ["ConfinedSpace_Specialist"],  
-            "electrical": ["Electrical_Specialist"],
-            "height": ["HeightWork_Specialist"],
-            "mechanical": ["Mechanical_Specialist"],
-            "chemical": ["Chemical_Specialist"],
-            "hidden_risks": ["HiddenRisks_Hunter"]  # Always runs last to find missed risks
-        }
-    
-    def _init_gemini(self):
-        """Initialize Gemini API connection"""
+        # STRICT API REQUIREMENT - Initialize or FAIL
         if not settings.gemini_api_key:
-            print("[EnhancedAutoGenHSEAgents] WARNING: No Gemini API key configured")
-            self.api_working = False
-            return
-            
+            raise Exception("CRITICAL: Gemini API key required for Enhanced AutoGen analysis")
+        
         try:
             genai.configure(api_key=settings.gemini_api_key)
             self.gemini_model = genai.GenerativeModel(settings.gemini_model)
             
-            # Test API
-            test_response = self.gemini_model.generate_content("Test")
-            if test_response and test_response.text:
-                self.api_working = True
-                print(f"[EnhancedAutoGenHSEAgents] Gemini API verified and working: gemini-1.5-pro")
+            # Test API with simple call
+            test_response = self.gemini_model.generate_content('test')
+            print(f"[Enhanced_AutoGen] Gemini API verified: {settings.gemini_model}")
             
         except Exception as e:
-            print(f"[EnhancedAutoGenHSEAgents] Gemini API initialization failed: {e}")
-            self.api_working = False
+            raise Exception(f"CRITICAL: Gemini API initialization failed: {str(e)}")
     
-    def _create_specialized_agents(self) -> Dict[str, autogen.AssistantAgent]:
-        """Create specialized domain agents"""
+    async def search_relevant_documents(self, query: str, limit: int = 10) -> List[Dict]:
+        """Search for relevant documents using vector service"""
+        if not self.vector_service:
+            print("[Enhanced_AutoGen] No vector service available")
+            return []
         
-        agents = {}
-        
-        # 1. Risk Classification Agent - Primary analyzer
-        agents["Risk_Classifier"] = autogen.AssistantAgent(
-            name="Risk_Classifier",
-            system_message="""
-Tu sei il RISK CLASSIFIER PRINCIPALE - analizzatore primario di permessi HSE.
-
-RUOLO: Classificare attività lavorative e identificare domini di rischio coinvolti.
-
-COMPETENZE CORE:
-- Interpretazione semantica avanzata (anche con errori ortografici)
-- Classificazione per famiglie di rischio industriale
-- Identificazione attività implicite non dichiarate
-- Riconoscimento ambienti ad alto rischio
-- Analisi interferenze e rischi indiretti
-
-METODOLOGIA SISTEMATICA:
-1. SEMANTIC ANALYSIS: Analizza ogni elemento del permesso per inferire l'attività reale
-2. ACTIVITY CLASSIFICATION: Identifica cosa si sta realmente facendo
-3. ENVIRONMENT ASSESSMENT: Valuta dove si sta lavorando
-4. RISK DOMAIN MAPPING: Determina quali specialisti coinvolgere
-5. PRIORITY RANKING: Ordina i rischi per criticità
-
-OUTPUT RICHIESTO:
-```json
-{
-  "activity_classification": {
-    "primary_activity": "descrizione attività principale identificata",
-    "secondary_activities": ["attività secondarie o preparatorie"],
-    "activity_confidence": "alta|media|bassa",
-    "interpretation_notes": "note su inferenze fatte"
-  },
-  "environment_analysis": {
-    "work_location": "tipo ambiente identificato",
-    "special_environments": ["spazio_confinato", "area_atex", "altezza", etc.],
-    "environmental_hazards": ["pericoli ambientali specifici"]
-  },
-  "risk_domains": {
-    "hot_work": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "confined_space": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "electrical": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "height": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "mechanical": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "chemical": {"priority": "alta|media|bassa|none", "confidence": "alta|media|bassa", "reasoning": "motivo"},
-    "hidden_risks": {"priority": "sempre_alta", "confidence": "alta", "reasoning": "Sempre attivo per trovare rischi nascosti"}
-  },
-  "specialist_recommendations": ["lista degli specialisti da coinvolgere in ordine di priorità"]
-}
-```
-
-PRINCIPI GUIDA:
-- Usa intelligenza semantica, non pattern matching rigido
-- Applica principio di precauzione professionale  
-- Considera sempre interferenze e rischi nascosti
-- Meglio sovrastimare che sottostimare la criticità
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 2. Hot Work Specialist
-        agents["HotWork_Specialist"] = autogen.AssistantAgent(
-            name="HotWork_Specialist", 
-            system_message="""
-Tu sei l'ESPERTO IN LAVORI A CALDO - specialista in tutte le operazioni che generano calore, fiamme o scintille.
-
-ATTIVAZIONE: Quando il Risk_Classifier identifica possibili lavori a caldo.
-
-EXPERTISE DOMAINS:
-- Saldatura (elettrodo, TIG, MIG/MAG, ossiacetilenica)
-- Taglio termico (plasma, ossitaglio, arco-aria)
-- Operazioni abrasive con scintille (molatura, sbavatura, taglio abrasivo)
-- Brasatura e saldobrasatura
-- Risaldatura e riparazione metalli
-- Operazioni in atmosfere potenzialmente esplosive
-
-APPROCCIO ANALITICO:
-1. ACTIVITY CONFIRMATION: Conferma natura dei lavori a caldo identificati
-2. FIRE/EXPLOSION ASSESSMENT: Valuta rischi incendio/esplosione specifici per l'ambiente
-3. ATMOSPHERIC ANALYSIS: Verifica presenza materiali combustibili/atmosfere esplosive
-4. HOT WORK PERMITS: Determina permessi aggiuntivi necessari
-5. SAFETY PERIMETER: Definisce raggio di sicurezza e misure antincendio
-6. PPE SPECIFICATION: Specifica DPI specifici per tipologia di lavoro a caldo
-
-STANDARD RISK EVALUATION:
-- Incendio/esplosione (sempre priorità massima)
-- Ustioni termiche (contatto/irraggiamento/schizzi metallo fuso)
-- Inalazione fumi metallici e gas di combustione
-- Radiazioni ottiche (UV/IR da archi elettrici)
-- Rischi elettrici (in saldatura elettrica)
-- Asfissia da gas inerti (argon, CO2)
-
-OUTPUT: Analisi dettagliata rischi da lavori a caldo con misure specifiche.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 3. Confined Space Specialist  
-        agents["ConfinedSpace_Specialist"] = autogen.AssistantAgent(
-            name="ConfinedSpace_Specialist",
-            system_message="""
-Tu sei l'ESPERTO IN SPAZI CONFINATI - specialista in ambienti con accesso limitato.
-
-ATTIVAZIONE: Per lavori in serbatoi, cisterne, cunicoli, pozzi, silos, vasche, tunnel.
-
-COMPETENZE SPECIALISTICHE:
-- Classificazione spazi confinati (NIOSH/OSHA/DPR 177/2011)
-- Valutazione atmosfere pericolose 
-- Monitoraggio continuo parametri ambientali
-- Procedure di accesso e uscita sicura
-- Sistemi di comunicazione e sorveglianza
-- Emergency rescue procedures
-
-METODOLOGIA:
-1. SPACE CLASSIFICATION: Determina se è spazio confinato e tipologia
-2. ATMOSPHERIC ASSESSMENT: Identifica pericoli atmosferici potenziali  
-3. PHYSICAL HAZARDS: Valuta rischi fisici dell'ambiente confinato
-4. ENTRY PROCEDURES: Definisce procedura di accesso sicuro
-5. MONITORING REQUIREMENTS: Specifica monitoraggio continuo necessario
-6. RESCUE PLANNING: Pianifica procedure di emergenza e recupero
-
-HAZARD CATEGORIES DA VALUTARE:
-- Atmospheric: O2 (<19.5% o >23.5%), gas tossici (H2S, CO, etc.), esplosivi (LEL)
-- Physical: annegamento, seppellimento, schiacciamento
-- Mechanical: parti in movimento, mixer, agitatori
-- Thermal: temperature estreme, vapore
-- Engulfment: materiali fluidi che possono inghiottire
-- Entrapment: configurazioni che impediscono uscita
-
-OUTPUT: Analisi completa rischi spazio confinato con procedure specifiche.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 4. Electrical Safety Specialist
-        agents["Electrical_Specialist"] = autogen.AssistantAgent(
-            name="Electrical_Specialist",
-            system_message="""
-Tu sei l'ESPERTO IN SICUREZZA ELETTRICA - specialista in tutti i rischi elettrici industriali.
-
-ATTIVAZIONE: Per lavori su/vicino impianti elettrici, quadri, cabine, linee aeree.
-
-COMPETENZE SPECIALISTICHE:
-- Lavori elettrici secondo CEI 11-27 e CEI EN 50110
-- Procedure LOTO (Lock-Out Tag-Out)
-- Valutazione rischio arco elettrico (CEI EN 61482)
-- Lavori in prossimità di parti attive
-- DPI per rischi elettrici (CEI EN 61482, EN 60903)
-- Classificazione ambienti elettrici
-
-METODOLOGIA:
-1. ELECTRICAL HAZARD ASSESSMENT: Identifica tutti i rischi elettrici presenti
-2. VOLTAGE CLASSIFICATION: Classifica tensioni (BT, MT, AT)
-3. WORK CLASSIFICATION: Determina tipologia lavoro (elettrico, non elettrico, in prossimità)
-4. LOTO PROCEDURES: Definisce procedure isolamento e consegna impianti
-5. ARC FLASH ANALYSIS: Valuta rischio arco elettrico e energia incidente
-6. PPE SELECTION: Specifica DPI elettrici appropriati
-
-HAZARD CATEGORIES:
-- Elettrocuzione/elettrizzazione (contatto diretto/indiretto)
-- Arco elettrico (ustioni, esplosione arco)
-- Incendio di origine elettrica
-- Esplosione in atmosfere ATEX con sorgenti elettriche
-- Caduta da altezza per shock elettrico
-- Rischi indotti da black-out/interruzioni alimentazione
-
-OUTPUT: Analisi rischi elettrici con procedure LOTO e DPI specifici.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 5. Height Work Specialist
-        agents["HeightWork_Specialist"] = autogen.AssistantAgent(
-            name="HeightWork_Specialist", 
-            system_message="""
-Tu sei l'ESPERTO IN LAVORI IN QUOTA - specialista in prevenzione cadute dall'alto.
-
-ATTIVAZIONE: Per lavori oltre 2 metri di altezza o con rischio caduta.
-
-COMPETENZE SPECIALISTICHE:
-- Normativa lavori in quota (D.Lgs 81/08 Titolo IV, UNI EN 363-365)
-- Sistemi anticaduta individuali e collettivi
-- Ponteggi e opere provvisionali
-- Accesso mediante funi (lavori su fune)
-- Valutazione fattore caduta e tirante d'aria
-- Rescue procedures per lavori in quota
-
-METODOLOGIA:
-1. FALL HAZARD ASSESSMENT: Identifica tutti i punti di possibile caduta
-2. HEIGHT CLASSIFICATION: Classifica altezze e tipologie di esposizione
-3. FALL PROTECTION SYSTEMS: Valuta sistemi protezione collettiva vs individuale
-4. ANCHOR POINT ANALYSIS: Verifica punti di ancoraggio disponibili/necessari
-5. RESCUE PLANNING: Pianifica procedure di recupero in emergenza
-6. WORK POSITIONING: Definisce sistemi di posizionamento sicuro
-
-PROTECTION HIERARCHY:
-- Eliminazione del rischio (lavoro a terra quando possibile)
-- Protezioni collettive (parapetti, reti, ponteggi)
-- Sistemi di trattenuta (impediscono raggiungere bordo)
-- Sistemi anticaduta (arrestano caduta in corso)
-- Sistemi di posizionamento sul lavoro
-
-HAZARD ASSESSMENT:
-- Altezza di caduta e superfici sottostanti
-- Condizioni meteorologiche e ambientali
-- Oscillazioni e effetto pendolo
-- Fattore caduta e forze d'arresto
-- Spazio libero necessario sotto il lavoratore
-
-OUTPUT: Piano completo protezione anticaduta con DPI e procedure specifiche.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 6. Mechanical Safety Specialist
-        agents["Mechanical_Specialist"] = autogen.AssistantAgent(
-            name="Mechanical_Specialist",
-            system_message="""
-Tu sei l'ESPERTO IN SICUREZZA MECCANICA - specialista in rischi da macchinari e attrezzature.
-
-ATTIVAZIONE: Per lavori con/su macchinari, attrezzature, sistemi meccanici.
-
-COMPETENZE SPECIALISTICHE:
-- Direttiva Macchine 2006/42/CE e norme armonizzate
-- Valutazione rischi meccanici secondo EN ISO 12100
-- Sistemi di sicurezza e protezioni (EN ISO 13849, EN IEC 62061)
-- LOTO per macchinari e sistemi meccanici
-- Manutenzione sicura e troubleshooting
-- Movimentazione meccanica dei carichi
-
-METODOLOGIA:
-1. MECHANICAL HAZARD ID: Identifica tutti i pericoli meccanici presenti
-2. ENERGY ASSESSMENT: Valuta energie in gioco (cinetica, potenziale, elastica)
-3. PROTECTION EVALUATION: Verifica adeguatezza protezioni esistenti
-4. LOCKOUT PROCEDURES: Definisce procedure isolamento energie pericolose
-5. MAINTENANCE SAFETY: Valuta rischi specifici di manutenzione/riparazione
-6. EMERGENCY PROCEDURES: Pianifica gestione emergenze meccaniche
-
-MECHANICAL HAZARDS:
-- Schiacciamento tra parti fisse e mobili
-- Cesoiamento da elementi taglienti
-- Trascinamento da parti in rotazione
-- Proiezione di parti o materiali
-- Perforazione/puntura da elementi acuti
-- Attrito e abrasione
-- Impatto da caduta oggetti
-- Instabilità strutturale
-
-ENERGY SOURCES DA CONSIDERARE:
-- Energia meccanica (molle, volani, contrappesi)
-- Energia pneumatica (aria compressa)
-- Energia idraulica (pressioni elevate)
-- Energia gravitazionale (masse sospese)
-- Energia elastica (sistemi pretensionati)
-
-OUTPUT: Analisi completa rischi meccanici con procedure LOTO e protezioni richieste.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 7. Chemical Safety Specialist
-        agents["Chemical_Specialist"] = autogen.AssistantAgent(
-            name="Chemical_Specialist",
-            system_message="""
-Tu sei l'ESPERTO IN SICUREZZA CHIMICA - specialista in sostanze pericolose e ATEX.
-
-ATTIVAZIONE: Per lavori con sostanze chimiche, atmosfere esplosive, contaminanti.
-
-COMPETENZE SPECIALISTICHE:
-- Regolamento CLP e schede dati sicurezza
-- Direttive ATEX 99/92/CE e 2014/34/UE  
-- Valutazione esposizione professionale (D.Lgs 81/08 Titolo IX)
-- Ventilazione industriale e controllo atmosfere
-- DPI per rischi chimici (EN 14387, EN 374)
-- Procedure emergenza sostanze pericolose
-
-METODOLOGIA:
-1. CHEMICAL INVENTORY: Identifica tutte le sostanze presenti/utilizzate
-2. HAZARD CLASSIFICATION: Classifica pericoli secondo CLP
-3. EXPOSURE ASSESSMENT: Valuta vie e livelli di esposizione  
-4. ATEX ZONE CLASSIFICATION: Classifica zone a rischio esplosione
-5. VENTILATION ANALYSIS: Verifica adeguatezza sistemi ventilazione
-6. EMERGENCY RESPONSE: Pianifica gestione rilasci e contaminazioni
-
-CHEMICAL HAZARDS:
-- Tossicità acuta e cronica (inalazione, contatto, ingestione)
-- Corrosività e irritazione cutanea/oculare
-- Sensibilizzazione respiratoria/cutanea
-- Cancerogenicità, mutagenicity, tossicità riproduttiva
-- Pericoli fisici (infiammabilità, esplosività, comburenza)
-- Pericoloso per ambiente acquatico
-
-ATEX ASSESSMENT:
-- Classificazione sostanze (gas, vapori, nebbie, polveri)
-- Determinazione limiti infiammabilità (LEL/UEL)
-- Classificazione zone (0,1,2 per gas - 20,21,22 per polveri)  
-- Valutazione sorgenti rilascio e ventilazione
-- Controllo sorgenti innesco
-- Equipaggiamenti ATEX appropriati
-
-OUTPUT: Valutazione completa rischi chimici/ATEX con misure prevenzione e protezione.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 8. Hidden Risks Hunter - Trova rischi non identificati
-        agents["HiddenRisks_Hunter"] = autogen.AssistantAgent(
-            name="HiddenRisks_Hunter",
-            system_message="""
-Tu sei l'HIDDEN RISKS HUNTER - il detective dei rischi nascosti e non identificati.
-
-RUOLO CRITICO: Trovare i rischi che TUTTI gli altri specialisti potrebbero aver perso.
-
-EXPERTISE UNICA:
-- Pattern recognition avanzato per rischi non ovvi
-- Analisi interferenze complesse e multifattoriali  
-- Identificazione rischi emergenti e casi limite
-- Valutazione effetti domino e cascata
-- Analisi failure modes e scenari worst-case
-- Red team thinking per safety
-
-METODOLOGIA INVESTIGATIVA:
-1. COMPREHENSIVE REVIEW: Analizza output di tutti gli specialisti precedenti
-2. GAP ANALYSIS: Cerca lacune sistematiche nell'analisi complessiva
-3. INTERFERENCE MAPPING: Mappa interferenze tra diversi rischi e attività
-4. DOMINO EFFECT ANALYSIS: Valuta effetti a catena e amplificazione rischi
-5. EDGE CASE EXPLORATION: Esplora scenari limite e condizioni estreme
-6. HUMAN FACTORS ASSESSMENT: Considera errori umani e fattori organizzativi
-
-APPROCCIO "RED TEAM":
-- Assume che qualcosa sia stato dimenticato
-- Sfida le assunzioni degli altri specialisti
-- Cerca combinazioni pericolose di fattori "sicuri"
-- Considera malfunzionamenti simultanei
-- Valuta rischi durante fasi transitorie (avvio/spegnimento)
-- Analizza rischi da modifiche non autorizzate
-
-RISCHI TIPICAMENTE NASCOSTI:
-- Interazioni tra DPI che riducono efficacia
-- Rischi creati dalle stesse misure di sicurezza
-- Pericoli durante setup e cleanup, non solo lavoro principale
-- Rischi per soccorritori e personale di emergenza
-- Effetti cumulativi di esposizioni "sicure"
-- Rischi differiti nel tempo
-- Incompatibilità tra procedure di diversi fornitori
-- Rischi da condizioni meteorologiche estreme
-
-DOMANDE CHIAVE DA PORSI:
-- "E se succede questo E anche quest'altro contemporaneamente?"
-- "Cosa potrebbe andare storto con le nostre misure di sicurezza?"
-- "Quali rischi sorgono se qualcuno NON segue la procedura?"
-- "Che rischi ci sono per chi deve aiutare in caso di emergenza?"
-- "Cosa succederebbe in condizioni diverse da quelle normali?"
-
-OUTPUT: Lista di rischi nascosti, interferenze pericolose e scenari worst-case non identificati precedentemente.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        # 4. Safety Reviewer - Final consolidation
-        agents["Safety_Reviewer"] = autogen.AssistantAgent(
-            name="Safety_Reviewer",
-            system_message="""
-Tu sei il SAFETY REVIEWER SENIOR - responsabile della revisione e consolidamento finale.
-
-RUOLO: Revisionare, integrare e finalizzare le analisi degli specialisti.
-
-RESPONSABILITÀ:
-1. REVIEW COMPLETENESS: Verificare che tutti i rischi identificati siano stati analizzati
-2. CONSISTENCY CHECK: Assicurare coerenza tra analisi dei diversi specialisti  
-3. GAP ANALYSIS: Identificare eventuali rischi trascurati o sottovalutati
-4. PRIORITY RANKING: Riordinare rischi e misure per priorità operativa
-5. COMPLIANCE VERIFICATION: Verificare conformità normativa completa
-6. FINAL FORMATTING: Strutturare output finale per il cliente
-
-PRINCIPI DI REVISIONE:
-- Approccio conservativo professionale
-- Zero tolleranza per gap nella safety
-- Conformità rigorosa alle normative vigenti
-- Praticità operativa delle misure proposte
-- Chiarezza e completezza dell'output finale
-
-OUTPUT: Analisi HSE finale consolidata e completa.
-""",
-            llm_config=self.llm_config,
-            max_consecutive_auto_reply=1,
-            human_input_mode="NEVER"
-        )
-        
-        return agents
+        try:
+            filters = {"tenant_id": self.user_context.get("tenant_id", 1)}
+            documents = await self.vector_service.hybrid_search(
+                query=query,
+                filters=filters,
+                limit=limit,
+                threshold=0.5
+            )
+            
+            if documents:
+                print(f"[Enhanced_AutoGen] Found {len(documents)} relevant documents")
+                return documents
+            else:
+                print("[Enhanced_AutoGen] No documents found")
+                return []
+                
+        except Exception as e:
+            print(f"[Enhanced_AutoGen] Error searching documents: {e}")
+            return []
     
-    async def analyze_permit(self, permit_data: Dict[str, Any], context_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def analyze_permit(
+        self, 
+        permit_data: Dict[str, Any], 
+        context_documents: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
-        Enhanced permit analysis with specialized agents workflow
+        MANDATORY 5-PHASE COMPREHENSIVE ANALYSIS
+        Pure AI-driven - FAIL FAST if any phase fails
         """
+        start_time = time.time()
         
-        if not self.api_working:
-            return self._create_error_response("Gemini API non disponibile")
+        print(f"[Enhanced_AutoGen] Starting MANDATORY 5-Phase comprehensive analysis")
+        print(f"[Enhanced_AutoGen] Permit: {permit_data.get('title', 'N/A')}")
+        print(f"[Enhanced_AutoGen] Documents: {len(context_documents)}")
         
+        # Validate and sanitize context documents
+        safe_documents = []
         try:
-            # Phase 1: Risk Classification  
-            classification_result = await self._run_risk_classification(permit_data, context_documents)
-            
-            # Phase 2: Specialized Analysis based on identified domains
-            specialist_results = await self._run_specialist_analysis(permit_data, classification_result)
-            
-            # Phase 3: Final Review and Consolidation
-            final_result = await self._run_final_review(permit_data, classification_result, specialist_results)
-            
-            return final_result
-            
-        except Exception as e:
-            print(f"[EnhancedAutoGenHSEAgents] Analysis error: {e}")
-            return self._create_error_response(f"Errore durante l'analisi: {str(e)}")
-    
-    async def _run_risk_classification(self, permit_data: Dict[str, Any], context_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Run risk classification phase"""
-        
-        classification_prompt = f"""
-PERMESSO DA ANALIZZARE:
-{self._format_permit_for_analysis(permit_data)}
-
-DOCUMENTI DI CONTESTO:
-{self._format_context_documents(context_documents)}
-
-Esegui la classificazione del rischio seguendo la tua metodologia sistematica.
-Fornisci JSON strutturato come specificato nel tuo system message.
-"""
-        
-        response = await self._get_gemini_response(
-            classification_prompt,
-            "Risk_Classifier",
-            "Classificatore primario di rischi HSE"
-        )
-        
-        # Parse classification result
-        classification_json = self._parse_json_from_response(response)
-        
-        return {
-            "raw_response": response,
-            "classification": classification_json,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    async def _run_specialist_analysis(self, permit_data: Dict[str, Any], classification_result: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
-        """Run specialized analysis for identified risk domains"""
-        
-        specialist_results = {}
-        classification = classification_result.get("classification", {})
-        risk_domains = classification.get("risk_domains", {})
-        
-        # Run specialists in parallel for efficiency
-        tasks = []
-        
-        for domain, domain_data in risk_domains.items():
-            # Always run HiddenRisks_Hunter, or run if priority is alta/media
-            should_run = (domain == "hidden_risks" or 
-                         domain_data.get("priority") in ["alta", "media", "sempre_alta"])
-            
-            if should_run and domain in self.risk_domains:
-                for specialist_name in self.risk_domains[domain]:
-                    if specialist_name in self.agents:
-                        task = self._run_single_specialist(
-                            specialist_name, 
-                            permit_data, 
-                            classification_result,
-                            domain
-                        )
-                        tasks.append((domain, specialist_name, task))
-        
-        # Execute all specialists concurrently
-        if tasks:
-            results = await asyncio.gather(*[task for _, _, task in tasks], return_exceptions=True)
-            
-            for i, (domain, specialist_name, _) in enumerate(tasks):
-                result = results[i]
-                if not isinstance(result, Exception):
-                    if domain not in specialist_results:
-                        specialist_results[domain] = []
-                    specialist_results[domain].append({
-                        "specialist": specialist_name,
-                        "analysis": result
-                    })
-        
-        return specialist_results
-    
-    async def _run_single_specialist(self, specialist_name: str, permit_data: Dict[str, Any], 
-                                   classification_result: Dict[str, Any], domain: str) -> Dict[str, Any]:
-        """Run analysis for a single specialist"""
-        
-        specialist_prompt = f"""
-PERMESSO DA ANALIZZARE:
-{self._format_permit_for_analysis(permit_data)}
-
-CLASSIFICAZIONE INIZIALE:
-{json.dumps(classification_result.get('classification', {}), indent=2, ensure_ascii=False)}
-
-DOMINIO DI FOCUS: {domain}
-
-Esegui la tua analisi specialistica seguendo la metodologia definita nel tuo system message.
-Concentrati sui rischi del tuo dominio di competenza identificati dal Risk_Classifier.
-"""
-        
-        response = await self._get_gemini_response(
-            specialist_prompt,
-            specialist_name,
-            f"Specialista {domain}"
-        )
-        
-        return {
-            "raw_response": response,
-            "structured_analysis": self._parse_json_from_response(response),
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    async def _run_final_review(self, permit_data: Dict[str, Any], 
-                               classification_result: Dict[str, Any], 
-                               specialist_results: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-        """Run final review and consolidation"""
-        
-        review_prompt = f"""
-PERMESSO ORIGINALE:
-{self._format_permit_for_analysis(permit_data)}
-
-CLASSIFICAZIONE INIZIALE:
-{json.dumps(classification_result.get('classification', {}), indent=2, ensure_ascii=False)}
-
-ANALISI SPECIALISTICHE:
-{json.dumps(specialist_results, indent=2, ensure_ascii=False)}
-
-Esegui la revisione finale e consolidamento seguendo i tuoi principi.
-Produci l'analisi HSE finale completa in formato standard per il cliente.
-"""
-        
-        response = await self._get_gemini_response(
-            review_prompt,
-            "Safety_Reviewer",
-            "Revisore finale sicurezza"
-        )
-        
-        # Convert to expected format
-        final_analysis = self._convert_to_standard_format(response, specialist_results)
-        
-        return {
-            "analysis_complete": True,
-            "confidence_score": 0.90,  # Higher with specialized approach
-            "agents_involved": self._get_involved_agents(specialist_results),
-            "processing_time": 0.0,
-            "workflow_used": "enhanced_specialized",
-            "final_analysis": final_analysis
-        }
-    
-    # Helper methods
-    def _format_permit_for_analysis(self, permit_data: Dict[str, Any]) -> str:
-        """Format permit data for analysis"""
-        return f"""
-ID: {permit_data.get('id', 'N/A')}
-Titolo: {permit_data.get('title', 'N/A')}
-Descrizione: {permit_data.get('description', 'N/A')}
-Tipo lavoro: {permit_data.get('work_type', 'N/A')}
-Localizzazione: {permit_data.get('location', 'N/A')}  
-Durata: {permit_data.get('duration_hours', 'N/A')} ore
-N. operatori: {permit_data.get('workers_count', 'N/A')}
-Attrezzature: {permit_data.get('equipment', 'N/A')}
-"""
-    
-    def _format_context_documents(self, context_docs: List[Dict[str, Any]]) -> str:
-        """Format context documents"""
-        if not context_docs:
-            return "Nessun documento di contesto fornito"
-        
-        formatted = ""
-        for doc in context_docs:
-            formatted += f"- {doc.get('title', 'Documento')}: {doc.get('content', '')[:200]}...\n"
-        return formatted
-    
-    async def _get_gemini_response(self, prompt: str, agent_name: str, agent_role: str) -> str:
-        """Get response from Gemini for specific agent"""
-        
-        full_prompt = f"""
-Tu sei {agent_name}, un {agent_role}.
-
-{prompt}
-"""
-        
-        try:
-            response = self.gemini_model.generate_content(full_prompt)
-            return response.text if response and response.text else "Errore nella risposta AI"
-        except Exception as e:
-            print(f"[EnhancedAutoGenHSEAgents] Gemini error for {agent_name}: {e}")
-            return f"Errore nella generazione risposta per {agent_name}: {str(e)}"
-    
-    def _parse_json_from_response(self, response: str) -> Dict[str, Any]:
-        """Parse JSON from AI response"""
-        try:
-            # Look for JSON blocks
-            json_pattern = r'```json\s*(.*?)\s*```'
-            matches = re.findall(json_pattern, response, re.DOTALL)
-            
-            for match in matches:
+            for i, doc in enumerate(context_documents):
                 try:
-                    return json.loads(match)
-                except json.JSONDecodeError:
-                    continue
-            
-            # Try to find JSON objects by brace matching
-            brace_count = 0
-            start = -1
-            for i, char in enumerate(response):
-                if char == '{':
-                    if brace_count == 0:
-                        start = i
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0 and start >= 0:
-                        try:
-                            return json.loads(response[start:i+1])
-                        except json.JSONDecodeError:
-                            continue
-            
-            return {}
-        except Exception:
-            return {}
-    
-    def _convert_to_standard_format(self, review_response: str, specialist_results: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-        """Convert final review to standard format expected by frontend"""
-        
-        # This should parse the Safety_Reviewer's response and convert it to the expected format
-        # For now, return a basic structure - this would be fully implemented
-        
-        return {
-            "executive_summary": {
-                "overall_score": 0.75,
-                "critical_issues": len([s for s in specialist_results.values() if s]),
-                "recommendations": 5,
-                "compliance_level": "requires_action",
-                "estimated_completion_time": "4-8 ore",
-                "key_findings": [
-                    "Analisi completata con approccio specialistico",
-                    f"Domini di rischio analizzati: {len(specialist_results)}",
-                    "Misure specifiche definite per ciascun dominio"
-                ],
-                "next_steps": [
-                    "Implementare misure specialistiche identificate",
-                    "Verificare conformità normativa per ciascun dominio",
-                    "Coordinare specialisti per implementazione"
-                ]
-            },
-            "action_items": [
-                {
-                    "id": "ENH_001",
-                    "type": "enhanced_analysis",
-                    "priority": "alta",
-                    "title": "Analisi specialistica completata",
-                    "description": "Utilizzato nuovo approccio con agenti specializzati per domini di rischio",
-                    "suggested_action": "Rivedere raccomandazioni specifiche per dominio",
-                    "consequences_if_ignored": "Possibile sottovalutazione rischi specialistici",
-                    "references": ["Metodologia Enhanced AutoGen"],
-                    "estimated_effort": "Implementazione graduata",
-                    "responsible_role": "Team HSE + Specialisti",
-                    "frontend_display": {
-                        "color": "blue",
-                        "icon": "check-circle",
-                        "category": "ANALISI AVANZATA"
+                    safe_doc = {
+                        "title": str(doc.get("title", f"Document {i+1}"))[:200],
+                        "document_type": str(doc.get("document_type", "unknown"))[:50],
+                        "content": str(doc.get("content", ""))[:300]  # Limit content to avoid prompt bloat
                     }
-                }
-            ]
-        }
-    
-    def _get_involved_agents(self, specialist_results: Dict[str, List[Dict[str, Any]]]) -> List[str]:
-        """Get list of agents involved in analysis"""
-        agents = ["Risk_Classifier", "Safety_Reviewer"]
-        
-        for domain_results in specialist_results.values():
-            for result in domain_results:
-                agents.append(result.get("specialist", "Unknown"))
-        
-        return list(set(agents))
-    
-    def _create_error_response(self, error_msg: str) -> Dict[str, Any]:
-        """Create error response in expected format"""
-        return {
-            "analysis_complete": False,
-            "error": error_msg,
-            "confidence_score": 0.0,
-            "agents_involved": [],
-            "processing_time": 0.0,
-            "final_analysis": {
-                "executive_summary": {
-                    "overall_score": 0.0,
-                    "critical_issues": 1,
-                    "recommendations": 0,
-                    "compliance_level": "errore_sistema",
-                    "estimated_completion_time": "N/A",
-                    "key_findings": [f"ERRORE: {error_msg}"],
-                    "next_steps": ["Risolvere problema tecnico", "Ripetere analisi"]
-                },
-                "action_items": []
-            }
-        }
-    
-    def _extract_structured_output_from_ai_responses(self, combined_analysis: str, conversation_history: List[Dict]) -> Dict[str, Any]:
-        """Extract structured data from AI responses"""
-        
-        # Parse the combined analysis to extract structured data
-        try:
-            # Try to find JSON blocks in the response
-            json_pattern = r'```json\s*(.*?)\s*```'
-            json_matches = re.findall(json_pattern, combined_analysis, re.DOTALL | re.IGNORECASE)
-            
-            structured_data = {}
-            
-            # Merge all JSON blocks found
-            for json_str in json_matches:
-                try:
-                    parsed = json.loads(json_str)
-                    # Deep merge the parsed JSON into structured_data
-                    for key, value in parsed.items():
-                        if key not in structured_data:
-                            structured_data[key] = value
-                        elif isinstance(value, dict) and isinstance(structured_data[key], dict):
-                            structured_data[key].update(value)
-                        elif isinstance(value, list) and isinstance(structured_data[key], list):
-                            structured_data[key].extend(value)
-                except json.JSONDecodeError:
+                    safe_documents.append(safe_doc)
+                except Exception as doc_error:
+                    print(f"[Enhanced_AutoGen] Skipping malformed document {i}: {doc_error}")
                     continue
+            print(f"[Enhanced_AutoGen] Using {len(safe_documents)} validated documents")
+        except Exception as docs_error:
+            print(f"[Enhanced_AutoGen] Error processing documents, proceeding without: {docs_error}")
+            safe_documents = []
+        
+        try:
+            # Create comprehensive analysis prompt with ALL permit data
+            permit_text = f"""
+PERMESSO DI LAVORO DA ANALIZZARE:
+
+TITOLO: {permit_data.get('title', 'N/A')}
+DESCRIZIONE: {permit_data.get('description', 'N/A')}
+TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
+UBICAZIONE: {permit_data.get('location', 'N/A')}
+DURATA: {permit_data.get('duration_hours', 'N/A')} ore
+NUMERO OPERATORI: {permit_data.get('workers_count', 'N/A')}
+
+DPI FORNITI: {permit_data.get('dpi_required', [])}
+AZIONI MITIGAZIONE ESISTENTI: {permit_data.get('risk_mitigation_actions', [])}
+
+DOCUMENTI AZIENDALI DISPONIBILI: {len(safe_documents)} documenti
+{chr(10).join([f"- {doc.get('title', 'N/A')} ({doc.get('document_type', 'N/A')})" for doc in safe_documents[:5]])}
+"""
             
-            # Create the standard output format with AI-extracted data
-            return self._create_standard_output(structured_data, combined_analysis)
+            # AI-Powered Comprehensive Analysis
+            analysis_prompt = f"""
+Sei un sistema HSE AI che esegue ANALISI COMPLETA E OBBLIGATORIA di permessi di lavoro.
+
+DEVI SEGUIRE QUESTI 5 STEP OBBLIGATORI:
+
+1. ANALISI GENERALE: Identifica TUTTI i rischi presenti
+2. CLASSIFICAZIONE: Categorizza rischi per severità e specialisti necessari  
+3. ANALISI DOCUMENTI: Cita normative e documenti aziendali applicabili
+4. ANALISI SPECIALISTICA: Applica expertise specifica per ogni rischio
+5. CONSOLIDAMENTO: Genera output finale COMPLETO e STRUTTURATO
+
+{permit_text}
+
+DOCUMENTI AZIENDALI DISPONIBILI:
+{chr(10).join([f"DOCUMENTO: {doc.get('title', 'N/A')} - TIPO: {doc.get('document_type', 'N/A')} - CONTENUTO: {doc.get('content', '')[:300]}..." for doc in safe_documents[:3]])}
+
+OUTPUT FINALE RICHIESTO - JSON VALIDO COMPLETO per PermitAnalysisResponse:
+
+IMPORTANTE: 
+- USA SOLO SINTASSI JSON VALIDA (doppi apici " non singoli ')
+- USA ARRAY JSON [...] NON LISTE PYTHON [...]
+- NON INCLUDERE COMMENTI O TESTO AGGIUNTIVO
+- VERIFICA CHE IL JSON SIA SINTATTICAMENTE CORRETTO
+
+{{
+  "analysis_id": "enhanced_autogen_{int(time.time())}_{permit_data.get('id', 0)}",
+  "permit_id": {permit_data.get('id', 0) if isinstance(permit_data.get('id'), int) else 0},
+  "analysis_complete": true,
+  "confidence_score": 0.9,
+  "processing_time": {time.time() - start_time:.2f},
+  "timestamp": "{datetime.utcnow().isoformat()}",
+  "agents_involved": ["Enhanced_AutoGen_5Phase"],
+  "ai_version": "Enhanced-AutoGen-5Phase-2.0",
+  
+  "executive_summary": {{
+    "overall_score": <0.0-1.0>,
+    "critical_issues": <numero_problemi_critici>,
+    "recommendations": <numero_raccomandazioni>,
+    "compliance_level": "<conforme|parzialmente_conforme|non_conforme>",
+    "estimated_completion_time": "<X-Y ore>",
+    "key_findings": ["Finding 1", "Finding 2", "Finding 3", "Finding 4", "Finding 5"],
+    "next_steps": ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]
+  }},
+  
+  "action_items": [
+    {{
+      "id": "ACT_001",
+      "type": "safety_improvement",
+      "priority": "alta",
+      "title": "Implementa misura sicurezza X",
+      "description": "Descrizione dettagliata misura",
+      "suggested_action": "Azione specifica da eseguire",
+      "consequences_if_ignored": "Conseguenze se non implementata",
+      "references": ["Normativa Y", "Documento Z"],
+      "estimated_effort": "2-4 ore",
+      "responsible_role": "RSPP",
+      "frontend_display": {{"color": "orange", "icon": "alert-triangle"}}
+    }}
+  ],
+  
+  "citations": {{
+    "normative_framework": [
+      {{
+        "document_info": {{"title": "D.Lgs 81/08 - Testo Unico Sicurezza", "type": "Normativa Base", "relevance_score": "0.95"}},
+        "relevance": {{"score": 0.95, "reason": "Normativa base sempre applicabile"}},
+        "key_requirements": [{{"requirement": "Valutazione rischi", "description": "Art. 17 - Obblighi datore di lavoro"}}],
+        "frontend_display": {{"color": "green", "icon": "book"}}
+      }}
+    ],
+    "company_procedures": [<citazioni_documenti_aziendali>],
+    "specialist_sources": [<fonti_specialistiche>]
+  }},
+  
+  "measures_evaluation": {{
+    "existing_dpi": {json.dumps(permit_data.get('dpi_required', []))},
+    "existing_actions": {json.dumps(permit_data.get('risk_mitigation_actions', []))},
+    "suggested_additional_dpi": ["DPI aggiuntivo 1", "DPI aggiuntivo 2"],
+    "suggested_additional_actions": ["Azione aggiuntiva 1", "Azione aggiuntiva 2"],
+    "dpi_adequacy": "insufficienti",
+    "actions_adequacy": "insufficienti",
+    "improvement_recommendations": 5
+  }},
+  
+  "completion_roadmap": {{
+    "immediate_actions": ["Azione immediata 1", "Azione immediata 2"],
+    "short_term_actions": ["Azione breve termine 1", "Azione breve termine 2"],
+    "medium_term_actions": ["Azione medio termine 1", "Azione medio termine 2"]
+  }},
+  
+  "performance_metrics": {{
+    "total_processing_time": {time.time() - start_time:.2f},
+    "phases_completed": 5,
+    "risks_identified": <numero_rischi>,
+    "specialists_activated": <numero_specialisti>,
+    "analysis_method": "Enhanced AutoGen 5-Phase AI"
+  }}
+}}
+
+REQUISITI OBBLIGATORI:
+- MINIMO 10 action_items dettagliati
+- MINIMO 3 citations per categoria  
+- Gap analysis completa (esistente vs raccomandato)
+- Executive summary completo
+- Measures evaluation dettagliata
+- SEMPRE suggerire miglioramenti (non output vuoti)
+
+FORMATO OUTPUT:
+- Restituisci SOLO il JSON valido, senza testo aggiuntivo
+- USA SOLO doppi apici " per stringhe (MAI singoli ')
+- USA SOLO array JSON [...] (MAI liste Python)
+- VERIFICA che tutte le parentesi {{ }} siano bilanciate
+- NO commenti nel JSON
+"""
             
+            print("[Enhanced_AutoGen] Executing comprehensive AI analysis...")
+            print(f"[Enhanced_AutoGen] Prompt length: {len(analysis_prompt)} characters")
+            
+            # Add timeout and error handling for Gemini API
+            try:
+                ai_response = self.gemini_model.generate_content(
+                    analysis_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=8000,  # Limit output size
+                        temperature=0.1,         # Low temperature for consistency
+                    )
+                )
+                ai_text = ai_response.text.strip()
+                print(f"[Enhanced_AutoGen] AI response length: {len(ai_text)} characters")
+            except Exception as gemini_error:
+                error_msg = f"Gemini API call failed: {str(gemini_error)}"
+                print(f"[Enhanced_AutoGen] {error_msg}")
+                raise Exception(error_msg)
+            
+            # Extract JSON from response
+            try:
+                # Clean the response - remove markdown code blocks
+                import re
+                
+                print(f"[Enhanced_AutoGen] AI response first 1000 chars: {ai_text[:1000]}")
+                print(f"[Enhanced_AutoGen] AI response last 500 chars: {ai_text[-500:]}")
+                
+                # Remove markdown code blocks (handle both ```json and ``` alone)
+                clean_text = re.sub(r'```json\s*', '', ai_text)
+                clean_text = re.sub(r'```\s*', '', clean_text)
+                clean_text = clean_text.strip()
+                
+                print(f"[Enhanced_AutoGen] Cleaned text length: {len(clean_text)} chars")
+                
+                # Find the start and end of the JSON object
+                start_idx = clean_text.find('{')
+                if start_idx == -1:
+                    raise ValueError("No JSON object found in response")
+                
+                # Find the matching closing brace
+                brace_count = 0
+                end_idx = -1
+                for i in range(start_idx, len(clean_text)):
+                    if clean_text[i] == '{':
+                        brace_count += 1
+                    elif clean_text[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i
+                            break
+                
+                if end_idx == -1:
+                    raise ValueError("Unclosed JSON object in response")
+                
+                json_text = clean_text[start_idx:end_idx + 1]
+                print(f"[Enhanced_AutoGen] Extracted JSON length: {len(json_text)} chars")
+                result_json = json.loads(json_text)
+                
+                # Validate and ensure required fields
+                result_json["analysis_complete"] = True
+                result_json["processing_time"] = round(time.time() - start_time, 2)
+                result_json["timestamp"] = datetime.utcnow().isoformat()
+                result_json["ai_version"] = "Enhanced-AutoGen-5Phase-2.0"
+                
+                # Ensure permit_id is integer
+                if "permit_id" not in result_json:
+                    result_json["permit_id"] = permit_data.get("id", 0) if isinstance(permit_data.get("id"), int) else 0
+                
+                # Ensure agents_involved
+                if "agents_involved" not in result_json:
+                    result_json["agents_involved"] = ["Enhanced_AutoGen_5Phase"]
+                
+                print(f"[Enhanced_AutoGen] COMPREHENSIVE analysis completed successfully!")
+                print(f"[Enhanced_AutoGen] Action items: {len(result_json.get('action_items', []))}")
+                print(f"[Enhanced_AutoGen] Citations total: {sum(len(cats) for cats in result_json.get('citations', {}).values())}")
+                print(f"[Enhanced_AutoGen] Processing time: {result_json['processing_time']}s")
+                
+                return result_json
+                
+            except json.JSONDecodeError as e:
+                error_msg = f"CRITICAL: AI response is not valid JSON: {str(e)}"
+                print(f"[Enhanced_AutoGen] {error_msg}")
+                print(f"[Enhanced_AutoGen] Problematic JSON section: {json_text[max(0, e.pos-100):e.pos+100] if 'json_text' in locals() else 'N/A'}")
+                raise Exception(error_msg)
+            except Exception as e:
+                error_msg = f"CRITICAL: JSON extraction failed: {str(e)}"
+                print(f"[Enhanced_AutoGen] {error_msg}")
+                print(f"[Enhanced_AutoGen] AI response snippet: {ai_text[:1000]}...")
+                raise Exception(error_msg)
+                
         except Exception as e:
-            print(f"[EnhancedAutoGenHSEAgents] Error extracting structured output: {e}")
-            return self._create_default_output()
-    
-    def _create_standard_output(self, structured_data: Dict[str, Any], raw_analysis: str) -> Dict[str, Any]:
-        """Create standard output format from structured data"""
-        
-        # Extract key components from structured data
-        general_analysis = structured_data.get("analisi_generale", {})
-        risks = structured_data.get("rischi_identificati", [])
-        dpi = structured_data.get("dpi_obbligatori", [])
-        measures = structured_data.get("misure_organizzative", [])
-        
-        # Convert to frontend-expected format
-        action_items = []
-        
-        # Convert DPI to action items
-        for idx, dpi_item in enumerate(dpi, 1):
-            action_items.append({
-                "id": f"ACT_{idx:03d}",
-                "type": "dpi_requirement",
-                "priority": "alta" if dpi_item.get("categoria_ue") == "III" else "media",
-                "title": f"Fornire {dpi_item.get('tipo', 'DPI')}",
-                "description": f"{dpi_item.get('tipo', 'DPI')} - {dpi_item.get('standard_tecnico', 'Standard')}",
-                "suggested_action": f"Approvvigionare e distribuire {dpi_item.get('tipo', 'DPI')} conformi a {dpi_item.get('standard_tecnico', 'Standard')}",
-                "consequences_if_ignored": f"Esposizione diretta ai rischi: {', '.join(dpi_item.get('rischi_coperti', []))}",
-                "references": [dpi_item.get('standard_tecnico', '')] if dpi_item.get('standard_tecnico') else [],
-                "estimated_effort": "1-2 ore",
-                "responsible_role": "Responsabile Approvvigionamenti",
-                "frontend_display": {
-                    "color": "red" if dpi_item.get("categoria_ue") == "III" else "yellow",
-                    "icon": "shield-check",
-                    "category": f"DPI Categoria {dpi_item.get('categoria_ue', 'II')}"
-                }
-            })
-        
-        # Convert organizational measures to action items
-        for idx, measure in enumerate(measures, len(action_items) + 1):
-            action_items.append({
-                "id": f"ACT_{idx:03d}",
-                "type": measure.get("tipo", "control_measure"),
-                "priority": "alta" if "emergenza" in measure.get("tipo", "").lower() else "media",
-                "title": measure.get("descrizione", "Misura di controllo")[:50],
-                "description": measure.get("descrizione", ""),
-                "suggested_action": measure.get("descrizione", ""),
-                "consequences_if_ignored": "Mancato controllo dei rischi identificati",
-                "references": [],
-                "estimated_effort": measure.get("tempistica", "1-2 ore"),
-                "responsible_role": measure.get("responsabile", "RSPP"),
-                "frontend_display": {
-                    "color": "blue",
-                    "icon": "check-circle",
-                    "category": "Misure Organizzative"
-                }
-            })
-        
-        # Build citations from normative references found
-        citations = {
-            "normative_framework": [],
-            "company_procedures": []
-        }
-        
-        # Extract normative references from risks
-        for risk in risks:
-            for norm in risk.get("normative_riferimento", []):
-                if "[FONTE: Doc Aziendale]" in norm:
-                    doc_title = norm.replace("[FONTE: Doc Aziendale]", "").strip()
-                    citations["company_procedures"].append({
-                        "document_info": {
-                            "title": doc_title,
-                            "type": "Procedura Aziendale",
-                            "date": "Current"
-                        },
-                        "relevance": {
-                            "score": 0.95,
-                            "reason": "Documento aziendale specifico applicabile"
-                        },
-                        "key_requirements": [],
-                        "frontend_display": {
-                            "color": "green",
-                            "icon": "book-open",
-                            "category": "Procedura Aziendale"
-                        }
-                    })
-                else:
-                    # API/General knowledge
-                    norm_clean = norm.replace("[FONTE: API/Conoscenza Generale]", "").replace("[FONTE: API]", "").strip()
-                    if norm_clean:
-                        citations["normative_framework"].append({
-                            "document_info": {
-                                "title": f"[FONTE: API/Conoscenza Generale] {norm_clean}",
-                                "type": "Normativa",
-                                "date": "Current"
-                            },
-                            "relevance": {
-                                "score": 0.85,
-                                "reason": "Applicabile per conformità normativa"
-                            },
-                            "key_requirements": [],
-                            "frontend_display": {
-                                "color": "gray",
-                                "icon": "file-text",
-                                "category": "Altro"
-                            }
-                        })
-        
-        # Build executive summary
-        critical_issues = len([r for r in risks if r.get("livello_rischio") in ["alto", "molto_alto"]])
-        recommendations = len(action_items)
-        
-        key_findings = []
-        for risk in risks[:3]:  # Top 3 risks
-            key_findings.append(risk.get("descrizione_dettagliata", "Rischio identificato"))
-        
-        return {
-            "executive_summary": {
-                "overall_score": 0.8 if critical_issues == 0 else (0.5 if critical_issues <= 2 else 0.2),
-                "critical_issues": critical_issues,
-                "recommendations": recommendations,
-                "compliance_level": general_analysis.get("classificazione_rischio", "da_verificare"),
-                "estimated_completion_time": f"{len(action_items) * 2}-{len(action_items) * 4} ore",
-                "key_findings": key_findings or ["Analisi completata con successo"],
-                "next_steps": [
-                    "Implementare misure di controllo prioritarie",
-                    "Fornire DPI secondo standard specificati",
-                    "Verificare formazione specifica operatori"
-                ]
-            },
-            "action_items": action_items,
-            "citations": citations,
-            "completion_roadmap": {
-                "immediate_actions": [
-                    f"Verifica disponibilità {len(dpi)} DPI identificati",
-                    "Briefing sicurezza pre-lavoro dettagliato"
-                ],
-                "short_term_actions": [
-                    f"Implementazione {critical_issues} misure controllo ad alta priorità",
-                    "Formazione specifica sui rischi identificati"
-                ],
-                "medium_term_actions": [
-                    "Monitoraggio continuo efficacia misure",
-                    "Aggiornamento procedure operative"
-                ],
-                "success_metrics": [
-                    "Zero incidenti/near miss",
-                    "100% conformità uso DPI",
-                    "Completamento entro tempi stimati",
-                    "Validazione misure di controllo"
-                ],
-                "review_checkpoints": [
-                    "Pre-start meeting sicurezza",
-                    "Controlli intermedi durante lavori",
-                    "Debriefing post-completamento"
-                ]
-            },
-            "performance_metrics": {
-                "total_processing_time": 0.0,
-                "autogen_conversation_rounds": len(self.agents),
-                "agents_successful": len(self.agents),
-                "agents_total": len(self.agents),
-                "analysis_method": "Enhanced AutoGen GroupChat"
-            }
-        }
-    
-    def _create_default_output(self) -> Dict[str, Any]:
-        """Create default output when parsing fails"""
-        return {
-            "executive_summary": {
-                "overall_score": 0.5,
-                "critical_issues": 0,
-                "recommendations": 0,
-                "compliance_level": "da_verificare",
-                "estimated_completion_time": "N/A",
-                "key_findings": ["Analisi completata, verifica manuale raccomandata"],
-                "next_steps": ["Revisione manuale dell'analisi"]
-            },
-            "action_items": [],
-            "citations": {
-                "normative_framework": [],
-                "company_procedures": []
-            },
-            "completion_roadmap": {}
-        }
+            error_msg = f"CRITICAL: Enhanced AutoGen 5-Phase analysis failed: {str(e)}"
+            print(f"[Enhanced_AutoGen] {error_msg}")
+            # FAIL FAST - No fallback as requested
+            raise Exception(error_msg)

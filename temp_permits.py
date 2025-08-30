@@ -14,27 +14,12 @@ from app.schemas.work_permit import (
     PermitAnalysisStatusResponse, PermitPreviewAnalysisRequest
 )
 from app.services.auth_service import get_current_user
-from app.models.user import User
 from app.services.autogen_orchestrator import AutoGenAIOrchestrator
 from app.services.fast_ai_orchestrator import FastAIOrchestrator
 from app.services.mock_orchestrator import MockOrchestrator
 from app.services.vector_service import VectorService
 from app.agents.advanced_orchestrator import AdvancedHSEOrchestrator
 from app.core.permissions import require_permission
-
-# Mock user for testing when no auth
-class MockUser:
-    def __init__(self):
-        self.tenant_id = 1
-        self.id = 1
-        self.department = "test"
-
-def get_current_user_optional():
-    """Get current user or return mock user if no auth available"""
-    try:
-        return get_current_user()
-    except:
-        return MockUser()
 from app.core.tenant import enforce_tenant_isolation, tenant_context
 from app.core.tenant_queries import get_tenant_query_manager, tenant_required
 from app.core.audit import AuditService, get_client_ip, get_user_agent
@@ -147,19 +132,18 @@ async def list_work_permits(
 
 
 @router.get("/{permit_id}", response_model=WorkPermitResponse)
-# @require_permission("own.permits.read") # TEMPORARILY DISABLED FOR TESTING
+@require_permission("own.permits.read")
 async def get_work_permit(
     permit_id: int,
-    # current_user: User = Depends(get_current_user), # TEMPORARILY DISABLED FOR TESTING
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Ottieni dettagli permesso di lavoro specifico
     """
-    # Use fixed tenant_id = 1 for testing
     permit = db.query(WorkPermit).filter(
         WorkPermit.id == permit_id,
-        WorkPermit.tenant_id == 1  # Fixed for testing
+        WorkPermit.tenant_id == current_user.tenant_id
     ).first()
     
     if not permit:
@@ -168,24 +152,23 @@ async def get_work_permit(
             detail="Work permit not found"
         )
     
-    # TEMPORARILY DISABLED permission checks for testing
-    # # Check user access to this permit
-    # if current_user.role not in ["super_admin", "admin"]:
-    #     if current_user.role == "manager":
-    #         # Manager can access department permits
-    #         if (permit.created_by != current_user.id and 
-    #             permit.custom_fields.get('department') != current_user.department):
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN,
-    #                 detail="Access denied to this permit"
-    #             )
-    #     else:
-    #         # Operator/viewer can only access own permits
-    #         if permit.created_by != current_user.id:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN,
-    #                 detail="Access denied to this permit"
-    #             )
+    # Check user access to this permit
+    if current_user.role not in ["super_admin", "admin"]:
+        if current_user.role == "manager":
+            # Manager can access department permits
+            if (permit.created_by != current_user.id and 
+                permit.custom_fields.get('department') != current_user.department):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this permit"
+                )
+        else:
+            # Operator/viewer can only access own permits
+            if permit.created_by != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this permit"
+                )
     
     return permit
 
@@ -411,21 +394,18 @@ async def analyze_permit_preview(
 
 
 @router.post("/{permit_id}/analyze", response_model=PermitAnalysisResponse)
-# @require_permission("permits.analyze")  # TEMPORARILY DISABLED FOR TESTING
+@require_permission("permits.analyze")
 async def analyze_permit_comprehensive(
     permit_id: int,
     analysis_request: PermitAnalysisRequest,
     background_tasks: BackgroundTasks,
     request: Request,
-    # current_user: User = Depends(get_current_user),  # TEMPORARILY DISABLED FOR TESTING
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     ENDPOINT PRINCIPALE: Analisi completa permesso con tutti gli agenti AI
     """
-    # TEMPORARY: Use mock user for testing
-    current_user = MockUser()
-    
     # Load permit with tenant validation
     permit = db.query(WorkPermit).filter(
         WorkPermit.id == permit_id,
@@ -453,75 +433,33 @@ async def analyze_permit_comprehensive(
         # Initialize vector service for searches
         vector_service = VectorService()
         
-        # Search relevant documents - try PostgreSQL first, fallback to vector search
+        # Search relevant documents
         search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"
-        relevant_docs = []
         
-        # First try to get documents from PostgreSQL directly
         try:
-            from app.models.document import Document
-            # Search for relevant documents based on keywords
-            work_keywords = ["rotore", "taglierina", "meccanico", "manutenzione", "LOTO", "lockout"]
+            relevant_docs = await vector_service.hybrid_search(
+                query=search_query,
+                filters={
+                    "tenant_id": current_user.tenant_id,
+                    "industry_sectors": [permit.work_type] if permit.work_type else [],
+                    "document_type": ["normativa", "istruzione_operativa", "procedura_sicurezza", 
+                                     "procedura", "standard", "guideline", "manuale"]
+                },
+                limit=20
+            )
             
-            # Get documents that match work type or keywords (fix JSONB operators)
-            postgres_docs = db.query(Document).filter(
-                Document.tenant_id == 1,  # Fixed for testing
-                db.or_(
-                    Document.title.ilike(f"%{permit.work_type}%") if permit.work_type else False,
-                    Document.title.ilike("%LOTO%"),
-                    Document.title.ilike("%taglier%"),
-                    Document.title.ilike("%DPI%"),
-                    Document.title.ilike("%meccan%"),
-                    # JSONB keyword search (any of the work keywords)
-                    *[Document.keywords.op('?')(keyword) for keyword in work_keywords]
-                )
-            ).limit(10).all()
+            # Enrich search results with keywords from PostgreSQL
+            from app.services.document_service import DocumentService
+            doc_service = DocumentService(db)
+            relevant_docs = doc_service.enrich_search_results_with_keywords(
+                relevant_docs, 
+                current_user.tenant_id
+            )
             
-            # Convert to expected format
-            for doc in postgres_docs:
-                relevant_docs.append({
-                    "id": doc.id,
-                    "title": doc.title,
-                    "document_type": doc.document_type,
-                    "document_code": doc.document_code,
-                    "keywords": doc.keywords or [],
-                    "content_summary": doc.content_summary or "",
-                    "industry_sectors": doc.industry_sectors or [],
-                    "search_score": 0.9,  # High score for direct matches
-                    "source": "PostgreSQL"
-                })
-            
-            print(f"[PermitRouter] Found {len(relevant_docs)} documents from PostgreSQL for permit {permit_id}")
-            
+            print(f"[PermitRouter] Found {len(relevant_docs)} relevant documents for permit {permit_id}")
         except Exception as e:
-            print(f"[PermitRouter] PostgreSQL document search failed: {e}")
-        
-        # If no documents from PostgreSQL, try vector search
-        if len(relevant_docs) == 0:
-            try:
-                relevant_docs = await vector_service.hybrid_search(
-                    query=search_query,
-                    filters={
-                        "tenant_id": 1,  # Fixed for testing
-                        "industry_sectors": [permit.work_type] if permit.work_type else [],
-                        "document_type": ["normativa", "istruzione_operativa", "procedura_sicurezza", 
-                                         "procedura", "standard", "guideline", "manuale"]
-                    },
-                    limit=20
-                )
-                
-                # Enrich search results with keywords from PostgreSQL
-                from app.services.document_service import DocumentService
-                doc_service = DocumentService(db)
-                relevant_docs = doc_service.enrich_search_results_with_keywords(
-                    relevant_docs, 
-                    1  # Fixed tenant_id for testing
-                )
-                
-                print(f"[PermitRouter] Found {len(relevant_docs)} documents from VectorService for permit {permit_id}")
-            except Exception as e:
-                print(f"[PermitRouter] Warning: Vector document search failed: {e}")
-                relevant_docs = []
+            print(f"[PermitRouter] Warning: Document search failed: {e}")
+            relevant_docs = []
         
         # Prepare permit metadata from PostgreSQL
         permit_metadata = {
@@ -559,17 +497,11 @@ async def analyze_permit_comprehensive(
             print(f"[PermitRouter] Warning: Could not fetch historical data: {e}")
         
         # Choose orchestrator based on request parameter
-        # Use mock user for testing without auth
-        mock_user = MockUser()
         user_context = {
-            "tenant_id": mock_user.tenant_id,  # Fixed to 1 for testing
-            "user_id": mock_user.id,
-            "department": mock_user.department
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "department": current_user.department
         }
-        
-        # Debug: Log which orchestrator is being used
-        logger.info(f"[PermitRouter] Orchestrator requested: {analysis_request.orchestrator}")
-        print(f"[PermitRouter] DEBUG: Orchestrator type = '{analysis_request.orchestrator}'")
         
         if analysis_request.orchestrator == "advanced":
             # Use Advanced Orchestrator with PostgreSQL integration
@@ -614,10 +546,6 @@ async def analyze_permit_comprehensive(
                 user_context=user_context,
                 vector_service=vector_service
             )
-        
-        # Debug: Log analysis result keys
-        logger.info(f"[PermitRouter] Analysis result keys: {list(analysis_result.keys())}")
-        print(f"[PermitRouter] DEBUG: Required fields check - citations: {'citations' in analysis_result}, completion_roadmap: {'completion_roadmap' in analysis_result}, ai_version: {'ai_version' in analysis_result}")
         
         # Save analysis results
         permit.ai_analysis = analysis_result

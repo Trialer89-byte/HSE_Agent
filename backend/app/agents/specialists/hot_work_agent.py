@@ -195,15 +195,63 @@ QUANDO ATTIVARE ALLARME MASSIMO:
             "Respiratore con filtri P3 per fumi saldatura"
         ])
         
+        # CONVERT TO STANDARD OUTPUT FORMAT per l'orchestratore
         return {
-            "specialist": self.name,
-            "risks_identified": risks,
-            "control_measures": controls,
+            # FORMATO STANDARD RICHIESTO DALL'ORCHESTRATORE
+            "risks_identified": [
+                {
+                    "type": risk["type"],
+                    "source": "HotWork_Specialist",
+                    "description": risk["description"],
+                    "severity": risk["severity"],
+                    "controls_required": risk.get("controls_required", [])
+                } for risk in risks
+            ] if risks else [
+                {
+                    "type": "hot_work_potential",
+                    "source": "HotWork_Specialist", 
+                    "description": "Potenziali rischi da lavori a caldo da valutare",
+                    "severity": "media"
+                }
+            ],
+            
             "dpi_requirements": dpi_required,
+            
+            "control_measures": controls + [
+                "Piano evacuazione specifico per hot work",
+                "Mezzi estinzione supplementari in posizione",
+                "Comunicazione diretta con squadra emergenza"
+            ],
+            
             "permits_required": ["Hot Work Permit"],
+            
+            "document_citations": [
+                {
+                    "type": "documento_aziendale_hot_work",
+                    "source": source,
+                    "description": "Procedura aziendale specifica per lavori a caldo",
+                    "mandatory": True
+                } for source in doc_sources
+            ] + [
+                {
+                    "type": "normativa_hot_work",
+                    "source": "D.M. 10/03/1998 - Prevenzione incendi",
+                    "description": "Normativa sui lavori a caldo in attività soggette",
+                    "mandatory": True
+                },
+                {
+                    "type": "standard_en",
+                    "source": "EN ISO 11612 - Indumenti ignifughi",
+                    "description": "Standard DPI per protezione dal calore",
+                    "mandatory": True
+                }
+            ],
+            
+            # DETTAGLI TECNICI ORIGINALI (mantenuti per compatibilità)
+            "specialist": self.name,
             "emergency_measures": [
                 "Piano evacuazione specifico",
-                "Mezzi estinzione supplementari",
+                "Mezzi estinzione supplementari", 
                 "Comunicazione diretta con squadra emergenza"
             ],
             "training_requirements": [
@@ -211,6 +259,8 @@ QUANDO ATTIVARE ALLARME MASSIMO:
                 "Certificazione saldatori (se applicabile)",
                 "Training fire watch"
             ],
-            "document_sources_used": doc_sources,  # Track which company docs were used
-            "documents_available": len(available_docs)
+            "document_sources_used": doc_sources,
+            "documents_available": len(available_docs),
+            "hot_work_procedures_found": len(hot_work_procedures),
+            "autonomous_search_performed": bool(specialized_docs)
         }

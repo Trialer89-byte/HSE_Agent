@@ -48,7 +48,9 @@
       "Bash(grep:*)",
       "Bash(docker inspect:*)",
       "Bash(docker kill:*)",
-      "Bash(docker start:*)"
+      "Bash(docker start:*)",
+      "Bash(sed:*)",
+      "Bash(touch:*)"
     ],
     "deny": []
   }

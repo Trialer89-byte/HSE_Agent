@@ -8,6 +8,8 @@ from .confined_space_agent import ConfinedSpaceSpecialist
 from .height_work_agent import HeightWorkSpecialist
 from .electrical_agent import ElectricalSpecialist
 from .chemical_agent import ChemicalSpecialist
+from .mechanical_specialist import MechanicalSpecialist
+from .dpi_evaluator_agent import DPIEvaluatorAgent
 
 # Registry of all available specialists
 SPECIALIST_REGISTRY = {
@@ -17,6 +19,8 @@ SPECIALIST_REGISTRY = {
     "height": HeightWorkSpecialist,
     "electrical": ElectricalSpecialist,
     "chemical": ChemicalSpecialist,
+    "mechanical": MechanicalSpecialist,
+    "dpi_evaluator": DPIEvaluatorAgent,
 }
 
 def get_specialist(name: str):
@@ -37,6 +41,8 @@ __all__ = [
     "HeightWorkSpecialist",
     "ElectricalSpecialist", 
     "ChemicalSpecialist",
+    "MechanicalSpecialist",
+    "DPIEvaluatorAgent",
     "get_specialist",
     "get_all_specialists",
     "SPECIALIST_REGISTRY"

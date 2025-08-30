@@ -145,11 +145,6 @@ class VectorService:
                     "description": "Autorità emittente (Stato, UNI, azienda)"
                 },
                 {
-                    "name": "ai_keywords",
-                    "dataType": ["text[]"],
-                    "description": "Keywords estratte da AI"
-                },
-                {
                     "name": "relevance_score",
                     "dataType": ["number"],
                     "description": "Score rilevanza 0-1"
@@ -230,7 +225,6 @@ class VectorService:
                             "industry_sectors": industry_sectors or [],
                             "tenant_id": tenant_id,
                             "authority": authority or "",
-                            "ai_keywords": chunk.get("ai_keywords", []),
                             "relevance_score": chunk.get("relevance_score", 0.0),
                             "chunk_index": chunk.get("chunk_index", i),
                             "section_title": chunk.get("section_title", f"Sezione {i+1}")
@@ -351,8 +345,7 @@ class VectorService:
                     "authority",
                     "section_title",
                     "chunk_index",
-                    "relevance_score",
-                    "ai_keywords"  # Include keywords for agent use
+                    "relevance_score"
                 ])
                 .with_hybrid(
                     query=query,
@@ -392,7 +385,6 @@ class VectorService:
                             "section_title": item["section_title"],
                             "chunk_index": item["chunk_index"],
                             "relevance_score": item["relevance_score"],
-                            "ai_keywords": item.get("ai_keywords", []),  # Include keywords for agents
                             "search_score": score
                         })
             
@@ -456,8 +448,7 @@ class VectorService:
                     "document_type",
                     "category",
                     "authority",
-                    "section_title",
-                    "ai_keywords"  # Include keywords for agent use
+                    "section_title"
                 ])
                 .with_near_text({"concepts": [query]})
                 .with_where(where_filter)
@@ -476,7 +467,6 @@ class VectorService:
                         "document_type": item["document_type"],
                         "category": item["category"],
                         "authority": item["authority"],
-                        "ai_keywords": item.get("ai_keywords", []),  # Include keywords for agents
                         "section_title": item["section_title"],
                         "certainty": item["_additional"]["certainty"],
                         "distance": item["_additional"]["distance"]

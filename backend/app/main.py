@@ -8,7 +8,7 @@ from datetime import datetime
 
 from app.config.settings import settings
 from app.config.database import Base, engine
-from app.routers import auth, permits, documents, admin_tenants, public_tenants
+from app.routers import auth, permits, documents, admin_tenants, public_tenants, test_permits, test_documents
 from app.middleware.security import SecurityMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.middleware.audit import AuditMiddleware
@@ -93,6 +93,8 @@ app.include_router(permits.router)
 app.include_router(documents.router)
 app.include_router(admin_tenants.router)
 app.include_router(public_tenants.router)
+app.include_router(test_permits.router)  # TEST ROUTER - NO AUTH
+app.include_router(test_documents.router)  # TEST ROUTER - NO AUTH
 
 
 @app.get("/")

@@ -21,6 +21,9 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
     duration_hours = Column(Integer)
     priority_level = Column(String(20), default="medium")
     
+    # Risk Mitigation Actions (new field)
+    risk_mitigation_actions = Column(JSON, default=[])
+    
     # AI Analysis Results
     ai_analysis = Column(JSON, default={})
     ai_confidence = Column(Float, default=0.0)
@@ -65,6 +68,7 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
             "location": self.location,
             "duration_hours": self.duration_hours,
             "priority_level": self.priority_level,
+            "risk_mitigation_actions": self.risk_mitigation_actions,  # Include new field
             "custom_fields": self.custom_fields,
             "tags": self.tags,
             # Include frequently used fields from custom_fields for agent compatibility

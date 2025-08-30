@@ -1,7 +1,6 @@
 from typing import Dict, Any, List, Optional
 import json
 import google.generativeai as genai
-from app.config.settings import settings
 
 
 class GeminiLLMConfig:
@@ -10,6 +9,7 @@ class GeminiLLMConfig:
     """
     
     def __init__(self, model_name: str = None):
+        from app.config.settings import settings
         self.model_name = model_name or settings.gemini_model
         self.api_key = settings.gemini_api_key
         
@@ -96,8 +96,13 @@ def get_autogen_llm_config() -> Optional[Dict[str, Any]]:
     Get AutoGen LLM configuration - return None to use direct Gemini calls
     Since AutoGen's LLM integration with Gemini is complex, we'll use direct API calls
     """
-    if not settings.gemini_api_key:
-        print("[AutoGen Config] No Gemini API key found")
+    try:
+        from app.config.settings import settings
+        if not settings.gemini_api_key:
+            print("[AutoGen Config] No Gemini API key found")
+            return None
+    except Exception:
+        print("[AutoGen Config] Settings not available")
         return None
     
     # For now, return None to signal that we should use direct Gemini calls
