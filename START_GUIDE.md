@@ -9,7 +9,16 @@ You have **3 different ways** to run the system depending on your needs:
 ## 1️⃣ **DEVELOPMENT MODE** (Fastest for coding)
 Best for: Making code changes, debugging, testing features
 
-### Method A: Frontend dev + Backend in Docker
+### Method A: Quick Development Setup
+```bash
+# Windows
+start-dev.bat
+
+# Linux/macOS  
+./start.sh dev
+```
+
+### Method B: Manual Development Setup
 ```bash
 # Terminal 1: Start backend services only
 docker-compose -f docker-compose.frontend.yml up postgres redis minio weaviate transformers backend
@@ -25,38 +34,36 @@ npm run dev
 - Backend API: http://localhost:8000/docs
 - Changes appear instantly without rebuild
 
-### Method B: Use the dev script
-```bash
-start-dev.bat
-```
-
 ---
 
 ## 2️⃣ **PRODUCTION MODE** (Docker - like real deployment)
 Best for: Testing the full system, demo to clients, pre-production testing
 
-### Method A: Full rebuild (after code changes)
+### Method A: Quick start (recommended)
 ```bash
-# Rebuilds everything and starts
-docker-compose -f docker-compose.frontend.yml up --build -d
+# Windows - Quick start without rebuild
+quick-start.bat
 
-# Or use:
+# Windows - Full stack with rebuild  
 start-fullstack.bat
+
+# Windows - Production optimized
+start-prod.bat
 ```
 
-### Method B: Quick start (no code changes)
+### Method B: Manual Docker commands
 ```bash
-# Uses existing images, no rebuild
+# Quick start (uses existing images)
 docker-compose -f docker-compose.frontend.yml up -d
 
-# Or use:
-quick-start.bat
+# Full rebuild (after code changes)
+docker-compose -f docker-compose.frontend.yml up --build -d
 ```
 
 **Access:**
 - Frontend: http://localhost:3000 (optimized build)
 - Backend API: http://localhost:8000/docs
-- All traffic goes through nginx proxy
+- All services containerized and isolated
 
 ---
 
@@ -93,19 +100,23 @@ npm run dev
 
 ## 🛑 Stopping the System
 
-### Stop everything:
+### Quick stop (Windows):
 ```bash
-docker-compose -f docker-compose.frontend.yml down
+stop-all.bat
 ```
 
-### Stop specific service:
+### Manual stop commands:
 ```bash
+# Stop everything
+docker-compose -f docker-compose.frontend.yml down
+
+# Stop specific service
 docker-compose -f docker-compose.frontend.yml stop frontend
 docker-compose -f docker-compose.frontend.yml stop backend
-```
 
-### Stop dev mode:
-Press `Ctrl+C` in the terminal running `npm run dev`
+# Stop dev mode
+# Press Ctrl+C in the terminal running npm run dev
+```
 
 ---
 

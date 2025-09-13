@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiCall } from '@/config/api';
+import { apiCall, apiCallWithTimeout } from '@/config/api';
 import Link from 'next/link';
 
 interface Document {
@@ -99,35 +99,11 @@ export default function DocumentsPage() {
     }
 
     try {
-      // Use direct fetch instead of apiCall to avoid header issues
-      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/documents/upload`;
-      
-      // Get auth headers manually
-      const headers: any = {};
-      if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        const tenantId = localStorage.getItem('tenant_id');
-        if (tenantId) {
-          headers['X-Tenant-ID'] = tenantId;
-        }
-      }
-
-      const response = await fetch(url, {
+      // Use apiCallWithTimeout with extended timeout for document analysis
+      const response = await apiCallWithTimeout('/api/v1/documents/upload', {
         method: 'POST',
-        headers: headers, // Don't set Content-Type for FormData
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${errorText}`);
-      }
-
-      await response.json();
+        body: formData, // FormData will be handled properly
+      }, 120000); // 2 minutes timeout
       
       // Reset form
       setSelectedFile(null);

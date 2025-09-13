@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
+from app.config.database import get_db
 
 
 # Password hashing
@@ -103,7 +104,7 @@ security = HTTPBearer()
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(lambda: None)  # Placeholder - needs proper dependency
+    db: Session = Depends(get_db)
 ):
     """
     Get current user from JWT token

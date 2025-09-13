@@ -74,13 +74,8 @@ Rispondi in formato JSON strutturato:
             "id": "ACT_001",
             "type": "risk_mitigation|dpi_requirement|compliance_gap|content_improvement",
             "priority": "alta|media|bassa",
-            "title": "titolo breve azione",
-            "description": "descrizione dettagliata",
             "suggested_action": "azione specifica suggerita",
-            "consequences_if_ignored": "conseguenze se ignorato",
             "references": ["riferimenti normativi"],
-            "estimated_effort": "sforzo stimato",
-            "responsible_role": "ruolo responsabile",
             "frontend_display": {{
                 "color": "red|orange|blue",
                 "icon": "alert-triangle|shield-check|file-text",
@@ -92,20 +87,12 @@ Rispondi in formato JSON strutturato:
         "normative_framework": [],
         "company_procedures": []
     }},
-    "completion_roadmap": {{
-        "immediate_actions": ["azioni immediate"],
-        "short_term_actions": ["azioni breve termine"],
-        "medium_term_actions": ["azioni medio termine"],
-        "success_metrics": ["metriche di successo"],
-        "review_checkpoints": ["checkpoint di verifica"]
-    }},
     "performance_metrics": {{
         "analysis_depth": "fast",
         "agents_used": 0,
         "documents_analyzed": numero
     }},
-    "analysis_complete": true,
-    "confidence_score": 0.0-1.0
+    "analysis_complete": true
 }}
 
 IMPORTANTE: Sii specifico e pratico nelle raccomandazioni. Non fare riferimenti a normative non presenti nei documenti forniti.
@@ -134,20 +121,12 @@ IMPORTANTE: Sii specifico e pratico nelle raccomandazioni. Non fare riferimenti 
                         "normative_framework": [],
                         "company_procedures": []
                     },
-                    "completion_roadmap": {
-                        "immediate_actions": [],
-                        "short_term_actions": [],
-                        "medium_term_actions": [],
-                        "success_metrics": [],
-                        "review_checkpoints": []
-                    },
                     "performance_metrics": {
                         "analysis_depth": "fast",
                         "agents_used": 0,
                         "documents_analyzed": len(context_documents)
                     },
                     "analysis_complete": True,
-                    "confidence_score": 0.5,
                     "error": "Failed to parse AI response"
                 }
             
@@ -170,7 +149,6 @@ IMPORTANTE: Sii specifico e pratico nelle raccomandazioni. Non fare riferimenti 
             return {
                 "analysis_complete": False,
                 "error": str(e),
-                "confidence_score": 0.0,
                 "processing_time": time.time() - start_time,
                 "timestamp": datetime.utcnow().isoformat()
             }

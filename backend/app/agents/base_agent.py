@@ -45,6 +45,10 @@ class BaseHSEAgent(ABC):
         """Get response from Gemini API with optional document context"""
         if not settings.gemini_api_key:
             return f"[{self.name}] Error: No Gemini API key configured"
+        
+        # Add limit instruction to the prompt for specialists and agents
+        if "Specialist" in self.name or "Agent" in self.name:
+            prompt += f"\n\nIMPORTANTE: Limita ogni categoria di raccomandazioni a MASSIMO 10 elementi. Sii conciso e prioritizza le azioni più critiche."
             
         try:
             genai.configure(api_key=settings.gemini_api_key)
@@ -83,11 +87,50 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
         except Exception as e:
             return f"[{self.name}] Error generating response: {str(e)}"
     
+    def create_error_response(self, exception: Exception) -> Dict[str, Any]:
+        """Create standardized error response for failed analysis"""
+        error_type = type(exception).__name__
+        error_msg = str(exception)
+        
+        # Categorize error for better user understanding
+        if "weaviate" in error_msg.lower():
+            error_category = "CONNESSIONE_DOCUMENTI"
+            user_message = "Servizio documenti non disponibile - analisi limitata"
+        elif "gemini" in error_msg.lower() or "api" in error_msg.lower():
+            error_category = "SERVIZIO_AI" 
+            user_message = "Servizio AI non disponibile - analisi non possibile"
+        elif "timeout" in error_msg.lower():
+            error_category = "TIMEOUT"
+            user_message = "Analisi interrotta per timeout - riprovare"
+        elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+            error_category = "CONNESSIONE_RETE"
+            user_message = "Problemi di connessione - riprovare"
+        else:
+            error_category = "ERRORE_GENERALE"
+            user_message = "Errore durante analisi"
+        
+        return {
+            "specialist": self.name,
+            "classification": f"ERRORE ANALISI - {error_category}",
+            "ai_analysis_used": False,
+            "error": f"{user_message}: {error_msg}",
+            "error_type": error_type,
+            "error_category": error_category,
+            "risks_identified": [],
+            "recommended_actions": [],
+            "dpi_requirements": [],
+            "existing_measures_evaluation": {
+                "error": f"Analisi fallita: {error_category}"
+            },
+            "permits_required": [],
+            "raw_ai_response": f"ERROR: {error_type}"
+        }
+    
     async def search_specialized_documents(self, query: str, tenant_id: int, limit: int = 5) -> list:
         """Search for documents specific to this specialist's domain"""
         if not self.vector_service:
-            print(f"[{self.name}] No vector service available for autonomous search")
-            return []
+            print(f"[{self.name}] WARNING: Weaviate vector service unavailable - proceeding without document context")
+            return []  # Return empty list instead of crashing
         
         try:
             # Create specialized query combining domain keywords with permit query
@@ -108,8 +151,8 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
             return specialized_docs
             
         except Exception as e:
-            print(f"[{self.name}] Error in autonomous document search: {e}")
-            return []
+            print(f"[{self.name}] WARNING: Weaviate search failed - {str(e)} - proceeding without documents")
+            return []  # Return empty list instead of crashing
     
     async def search_metadata_documents(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Search document metadata in PostgreSQL"""

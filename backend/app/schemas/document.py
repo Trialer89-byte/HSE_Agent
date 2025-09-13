@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,9 @@ class DocumentResponse(DocumentBase):
     # AI fields
     keywords: List[str] = Field(default_factory=list)
     relevance_score: float = 0.0
+    
+    # Weaviate verification status
+    weaviate_verification: Optional[Dict[str, Any]] = None
     
     class Config:
         from_attributes = True

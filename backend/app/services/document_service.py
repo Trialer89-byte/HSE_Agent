@@ -237,6 +237,58 @@ class DocumentService:
                     avg_relevance = sum(chunk.get("relevance_score", 0.0) for chunk in chunks) / len(chunks)
                     document.relevance_score = round(avg_relevance, 2)
                 self.db.commit()
+                
+                # MANDATORY WEAVIATE VALIDATION: Verify the document is actually searchable
+                try:
+                    # Test that the document can be found in Weaviate
+                    search_results = await self.vector_service.hybrid_search(
+                        query=title,
+                        filters={"tenant_id": tenant_id, "document_code": document_code},
+                        limit=1,
+                        threshold=0.0
+                    )
+                    
+                    if not search_results:
+                        # CRITICAL: Document not searchable in Weaviate - fail the upload
+                        print(f"[DocumentService] CRITICAL: Document {document_code} not searchable in Weaviate after upload")
+                        
+                        # Clean up - delete document and file
+                        self.db.delete(document)
+                        self.db.commit()
+                        await self.storage_service.delete_file(file_path)
+                        
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Document upload failed: Document not searchable in Weaviate. This is required for agent access."
+                        )
+                    
+                    print(f"[DocumentService] ✅ Weaviate search validation passed for {document_code}")
+                    
+                except Exception as search_error:
+                    print(f"[DocumentService] CRITICAL: Weaviate search validation failed for {document_code}: {search_error}")
+                    
+                    # Clean up - delete document and file
+                    self.db.delete(document)
+                    self.db.commit()
+                    await self.storage_service.delete_file(file_path)
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Document upload failed: Weaviate validation error - {str(search_error)}"
+                    )
+            else:
+                # CRITICAL: No chunk IDs returned - Weaviate sync failed
+                print(f"[DocumentService] CRITICAL: No vector chunks created for {document_code}")
+                
+                # Clean up - delete document and file  
+                self.db.delete(document)
+                self.db.commit()
+                await self.storage_service.delete_file(file_path)
+                
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Document upload failed: No vector embeddings created. Weaviate sync is mandatory."
+                )
             
             return document
             
@@ -287,6 +339,9 @@ class DocumentService:
         content = ""
         
         try:
+            # Always reset file pointer to beginning before reading
+            await file.seek(0)
+            
             if file_extension == '.pdf':
                 # Extract from PDF
                 pdf_reader = pypdf.PdfReader(file.file)
@@ -300,13 +355,30 @@ class DocumentService:
                     content += paragraph.text + "\n"
             
             elif file_extension == '.txt':
-                # Read text file
-                content = (await file.read()).decode('utf-8')
+                # Read text file - use proper file content reading
+                file_content = await file.read()
+                if isinstance(file_content, bytes):
+                    content = file_content.decode('utf-8', errors='ignore')
+                else:
+                    content = str(file_content)
             
-            # Reset file pointer
-            file.file.seek(0)
+            else:
+                # Handle other text-based files
+                try:
+                    file_content = await file.read()
+                    if isinstance(file_content, bytes):
+                        content = file_content.decode('utf-8', errors='ignore')
+                    else:
+                        content = str(file_content)
+                except UnicodeDecodeError:
+                    # Fallback for binary files that can't be decoded
+                    content = f"Binary file: {file.filename}"
+            
+            # Reset file pointer for any subsequent operations
+            await file.seek(0)
             
         except Exception as e:
+            print(f"[DocumentService] Text extraction error for {file.filename}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to extract text from file: {str(e)}"

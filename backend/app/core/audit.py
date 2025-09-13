@@ -120,14 +120,12 @@ class AuditService:
         user: User,
         permit_id: int,
         analysis_results: Dict[str, Any],
-        confidence_score: float,
         processing_time: float
     ):
         """
         Log AI analysis operations
         """
         extra_data = {
-            "confidence_score": confidence_score,
             "processing_time_seconds": processing_time,
             "agents_used": analysis_results.get("agents_involved", []),
             "analysis_version": analysis_results.get("ai_version")

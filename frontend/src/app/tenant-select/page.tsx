@@ -46,7 +46,7 @@ export default function TenantSelectPage() {
     setMessage('');
     
     try {
-      const demoDomain = 'demo.hse-system.com';
+      const demoDomain = 'test.hse-enterprise.local';
       const data = await apiCall(`/api/v1/public/tenants/validate?domain=${encodeURIComponent(demoDomain)}`);
       
       if (data.valid) {
@@ -128,7 +128,7 @@ export default function TenantSelectPage() {
                     required
                     value={domain}
                     onChange={(e) => setDomain(e.target.value)}
-                    placeholder="demo.hse-system.com"
+                    placeholder="test.hse-enterprise.local"
                     className="w-full px-4 py-4 bg-slate-900/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm"
                   />
                   <div className="absolute right-4 top-4">
@@ -204,7 +204,7 @@ export default function TenantSelectPage() {
             <div className="grid grid-cols-1 gap-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-500">Organization:</span>
-                <span className="text-orange-400 font-mono">demo.hse-system.com</span>
+                <span className="text-orange-400 font-mono">test.hse-enterprise.local</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Username:</span>
@@ -212,7 +212,7 @@ export default function TenantSelectPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Password:</span>
-                <span className="text-orange-400 font-mono">Admin123!</span>
+                <span className="text-orange-400 font-mono">HSEAdmin2024!</span>
               </div>
             </div>
           </div>

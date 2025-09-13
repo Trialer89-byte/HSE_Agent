@@ -27,6 +27,45 @@ router = APIRouter(
 upload_progress: Dict[str, Dict[str, Any]] = {}
 
 
+async def verify_weaviate_status(document: Document) -> Dict[str, Any]:
+    """
+    Verify if a document is properly loaded in Weaviate.
+    Returns verification status information.
+    """
+    verification_result = {
+        "weaviate_verified": False,
+        "weaviate_status": "not_checked",
+        "vector_id": document.vector_id
+    }
+    
+    if not document.vector_id:
+        verification_result["weaviate_status"] = "no_vector_id"
+        return verification_result
+    
+    try:
+        from app.services.vector_service import VectorService
+        vector_service = VectorService()
+        
+        # Try to search for the document in Weaviate using hybrid search
+        search_results = await vector_service.hybrid_search(
+            query=document.title,
+            filters={"tenant_id": document.tenant_id, "document_code": document.document_code},
+            limit=1,
+            threshold=0.0
+        )
+        
+        verification_result["weaviate_verified"] = len(search_results) > 0
+        verification_result["weaviate_status"] = "verified" if len(search_results) > 0 else "not_found"
+        
+        if len(search_results) > 0:
+            verification_result["chunks_found"] = len(search_results)
+        
+    except Exception as e:
+        verification_result["weaviate_status"] = f"verification_error: {str(e)}"
+    
+    return verification_result
+
+
 async def process_document_upload(
     task_id: str,
     file_content: bytes,
@@ -101,13 +140,51 @@ async def process_document_upload(
             force_reload=force_reload
         )
         
-        # Update success
+        # Update success and verify Weaviate upload
         print(f"[DEBUG] Document upload completed successfully for {task_id}, document_id: {document.id}")
+        
+        # Verify both PostgreSQL and Weaviate uploads
+        postgres_verified = document.id is not None
+        weaviate_verified = False
+        weaviate_status = "not_checked"
+        
+        try:
+            # Check if document exists in Weaviate by vector_id
+            if document.vector_id:
+                from app.services.vector_service import VectorService
+                vector_service = VectorService()
+                
+                # Try to search for the document in Weaviate
+                search_results = await vector_service.hybrid_search(
+                    query=document.title,
+                    filters={"tenant_id": document.tenant_id, "document_code": document.document_code},
+                    limit=1,
+                    threshold=0.0
+                )
+                
+                weaviate_verified = len(search_results) > 0
+                weaviate_status = "verified" if weaviate_verified else "not_found"
+                print(f"[DEBUG] Weaviate verification for {document.document_code}: {weaviate_status}")
+            else:
+                weaviate_status = "no_vector_id"
+                print(f"[DEBUG] Document {document.document_code} has no vector_id - Weaviate upload may have failed")
+        except Exception as e:
+            weaviate_status = f"verification_error: {str(e)}"
+            print(f"[DEBUG] Weaviate verification error for {document.document_code}: {e}")
+        
         upload_progress[task_id]["status"] = "completed"
         upload_progress[task_id]["progress"] = 100
         upload_progress[task_id]["message"] = "Document uploaded successfully"
         upload_progress[task_id]["document_id"] = document.id
-        upload_progress[task_id]["completed_at"] = datetime.now()
+        upload_progress[task_id]["completed_at"] = datetime.now().isoformat()
+        
+        # Add detailed verification status
+        upload_progress[task_id]["verification"] = {
+            "postgres_verified": postgres_verified,
+            "weaviate_verified": weaviate_verified,
+            "weaviate_status": weaviate_status,
+            "vector_id": document.vector_id
+        }
         
     except Exception as e:
         print(f"[ERROR] Upload failed for {task_id}: {str(e)}")
@@ -117,7 +194,7 @@ async def process_document_upload(
         upload_progress[task_id]["status"] = "failed"
         upload_progress[task_id]["error"] = str(e)
         upload_progress[task_id]["message"] = f"Upload failed: {str(e)}"
-        upload_progress[task_id]["completed_at"] = datetime.now()
+        upload_progress[task_id]["completed_at"] = datetime.now().isoformat()
 
 
 @router.post("/upload")
@@ -159,7 +236,7 @@ async def upload_document(
         "status": "starting",
         "progress": 0,
         "message": "Initializing upload...",
-        "started_at": datetime.now(),
+        "started_at": datetime.now().isoformat(),
         "document_id": None,
         "error": None
     }
@@ -220,8 +297,13 @@ async def get_upload_status(
     
     # Clean up old completed tasks (older than 1 hour)
     if progress_data.get("completed_at"):
-        elapsed = datetime.now() - progress_data["completed_at"]
-        if elapsed.total_seconds() > 3600:  # 1 hour
+        try:
+            completed_at = datetime.fromisoformat(progress_data["completed_at"])
+            elapsed = datetime.now() - completed_at
+            if elapsed.total_seconds() > 3600:  # 1 hour
+                del upload_progress[task_id]
+        except (ValueError, TypeError):
+            # If completed_at is not a valid ISO format, remove the task
             del upload_progress[task_id]
     
     return progress_data
@@ -231,13 +313,15 @@ async def get_upload_status(
 async def list_documents(
     document_type: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    verify_weaviate: bool = Query(False, description="Whether to verify each document exists in Weaviate"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    List documents for the current tenant with optional filtering.
+    List documents for the current tenant with optional filtering and Weaviate verification.
+    Note: Weaviate verification is disabled by default for performance reasons on list endpoints.
     """
     document_service = DocumentService(db)
     
@@ -262,8 +346,20 @@ async def list_documents(
     
     total = total_query.count()
     
+    # Convert to responses with optional Weaviate verification
+    document_responses = []
+    for doc in documents:
+        response = DocumentResponse.from_orm(doc)
+        
+        # Add Weaviate verification if requested (performance impact warning)
+        if verify_weaviate:
+            weaviate_status = await verify_weaviate_status(doc)
+            response.weaviate_verification = weaviate_status
+            
+        document_responses.append(response)
+    
     return DocumentListResponse(
-        documents=[DocumentResponse.from_orm(doc) for doc in documents],
+        documents=document_responses,
         total=total,
         limit=limit,
         offset=offset
@@ -273,11 +369,12 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: int,
+    verify_weaviate: bool = Query(True, description="Whether to verify document exists in Weaviate"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get a specific document by ID.
+    Get a specific document by ID, with optional Weaviate verification.
     """
     document = db.query(Document).filter(
         Document.id == document_id,
@@ -291,7 +388,15 @@ async def get_document(
             detail="Document not found"
         )
     
-    return DocumentResponse.from_orm(document)
+    # Create response
+    response = DocumentResponse.from_orm(document)
+    
+    # Add Weaviate verification if requested
+    if verify_weaviate:
+        weaviate_status = await verify_weaviate_status(document)
+        response.weaviate_verification = weaviate_status
+    
+    return response
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
@@ -371,6 +476,37 @@ async def delete_document(
         )
     
     return {"message": "Document deleted successfully"}
+
+
+@router.get("/{document_id}/weaviate-status")
+async def get_document_weaviate_status(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get Weaviate verification status for a specific document.
+    """
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id,
+        Document.is_active == True
+    ).first()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    weaviate_status = await verify_weaviate_status(document)
+    
+    return {
+        "document_id": document.id,
+        "document_code": document.document_code,
+        "postgres_verified": True,  # If we found it in the DB, it's in Postgres
+        **weaviate_status
+    }
 
 
 @router.post("/{document_id}/reanalyze", response_model=DocumentResponse)

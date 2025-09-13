@@ -1,32 +1,44 @@
 from typing import Optional
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
+from contextvars import ContextVar
 
 from app.models.tenant import Tenant
 from app.models.user import User
 
 
+# Use contextvars for thread-safe tenant context
+_current_tenant_id: ContextVar[Optional[int]] = ContextVar('current_tenant_id', default=None)
+_current_tenant: ContextVar[Optional[Tenant]] = ContextVar('current_tenant', default=None)
+
+
 class TenantContext:
     """
-    Manages tenant context for multi-tenant operations
+    Manages tenant context for multi-tenant operations using contextvars for thread safety
     """
-    
-    def __init__(self):
-        self.current_tenant_id: Optional[int] = None
-        self.current_tenant: Optional[Tenant] = None
     
     def set_tenant(self, tenant_id: int, tenant: Tenant = None):
         """Set current tenant context"""
-        self.current_tenant_id = tenant_id
-        self.current_tenant = tenant
+        _current_tenant_id.set(tenant_id)
+        _current_tenant.set(tenant)
     
     def clear(self):
         """Clear tenant context"""
-        self.current_tenant_id = None
-        self.current_tenant = None
+        _current_tenant_id.set(None)
+        _current_tenant.set(None)
+    
+    @property
+    def current_tenant_id(self) -> Optional[int]:
+        """Get current tenant ID"""
+        return _current_tenant_id.get()
+    
+    @property
+    def current_tenant(self) -> Optional[Tenant]:
+        """Get current tenant"""
+        return _current_tenant.get()
 
 
-# Global tenant context
+# Global tenant context (now thread-safe)
 tenant_context = TenantContext()
 
 

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// Base API configuration - use nginx proxy for all requests
-export const API_BASE_URL = 'http://localhost';
+// Base API configuration - point directly to backend
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Create axios instance
 export const apiClient = axios.create({
@@ -68,6 +68,14 @@ apiClient.interceptors.response.use(
 
 // Helper function for API calls without axios
 export async function apiCall(endpoint: string, options?: RequestInit) {
+  // Use longer timeout for document-related and AI analysis endpoints
+  const timeout = endpoint.includes('/documents') || endpoint.includes('/permits') || endpoint.includes('/work-permits') 
+    ? 120000 : 10000; // 2 minutes for documents and permits (AI analysis), 10 seconds for others
+  return apiCallWithTimeout(endpoint, options, timeout);
+}
+
+// Helper function for API calls with custom timeout
+export async function apiCallWithTimeout(endpoint: string, options?: RequestInit, timeoutMs: number = 10000) {
   const url = `${API_BASE_URL}${endpoint}`;
   
   // Don't set Content-Type for FormData (let browser set it with boundary)
@@ -75,11 +83,15 @@ export async function apiCall(endpoint: string, options?: RequestInit) {
   
   const headers: Record<string, string> = {
     ...(!isFormData && { 'Content-Type': 'application/json' }),
+    // Prevent caching of API responses to ensure fresh data
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
     ...(options?.headers as Record<string, string> || {}),
   };
   
-  // Add auth headers if available
-  if (typeof window !== 'undefined') {
+  // Add auth headers if available (but NOT for login/auth endpoints)
+  if (typeof window !== 'undefined' && !endpoint.includes('/auth/')) {
     const token = localStorage.getItem('auth_token');
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -100,6 +112,7 @@ export async function apiCall(endpoint: string, options?: RequestInit) {
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: AbortSignal.timeout(timeoutMs), // Custom timeout
     });
     
     if (!response.ok) {
@@ -109,9 +122,27 @@ export async function apiCall(endpoint: string, options?: RequestInit) {
     
     return response.json();
   } catch (error) {
-    // Check if it's a network error
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new Error('Cannot connect to backend. Please ensure the backend is running on http://localhost:8000');
+    // Log the actual error for debugging
+    console.error('API call error:', error);
+    console.error('URL attempted:', url);
+    console.error('Error type:', typeof error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    
+    // Check if it's a network error or timeout
+    if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+      throw new Error(`Cannot connect to backend. Please ensure the backend is running on http://127.0.0.1:8000. Original error: ${error.message}`);
+    }
+    
+    // Check if it's a timeout error
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      const timeoutSeconds = Math.round(timeoutMs / 1000);
+      throw new Error(`Operation timed out after ${timeoutSeconds} seconds. AI analysis may take longer than expected. Please try again.`);
+    }
+    
+    // Check for AbortError (can also indicate timeout)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      const timeoutSeconds = Math.round(timeoutMs / 1000);
+      throw new Error(`Request was aborted after ${timeoutSeconds} seconds. AI analysis may take longer than expected. Please try again.`);
     }
     throw error;
   }

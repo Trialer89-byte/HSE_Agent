@@ -2,7 +2,7 @@
 HSE Specialist Agents Module
 """
 
-from .risk_classifier_agent import RiskClassifierAgent
+from .unified_risk_classifier import UnifiedRiskClassifierAgent
 from .hot_work_agent import HotWorkSpecialist
 from .confined_space_agent import ConfinedSpaceSpecialist
 from .height_work_agent import HeightWorkSpecialist
@@ -13,7 +13,7 @@ from .dpi_evaluator_agent import DPIEvaluatorAgent
 
 # Registry of all available specialists
 SPECIALIST_REGISTRY = {
-    "risk_classifier": RiskClassifierAgent,
+    "unified_risk_classifier": UnifiedRiskClassifierAgent,
     "hot_work": HotWorkSpecialist,
     "confined_space": ConfinedSpaceSpecialist,
     "height": HeightWorkSpecialist,
@@ -35,7 +35,7 @@ def get_all_specialists():
     return {name: cls() for name, cls in SPECIALIST_REGISTRY.items()}
 
 __all__ = [
-    "RiskClassifierAgent",
+    "UnifiedRiskClassifierAgent",
     "HotWorkSpecialist", 
     "ConfinedSpaceSpecialist",
     "HeightWorkSpecialist",

@@ -33,8 +33,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         public_patterns = [
             "/api/v1/public/",
             "/api/v1/admin/",  # Admin endpoints handle their own tenant validation
-            "/api/v1/test/",   # Test endpoints bypass authentication
-            "/api/v1/permits/" # TEMPORARY: Skip auth for permits during testing
+            "/api/v1/test/"   # Test endpoints bypass authentication
         ]
         
         if request.url.path in public_endpoints:
@@ -78,11 +77,20 @@ class TenantMiddleware(BaseHTTPMiddleware):
             
             return response
             
+        except HTTPException as e:
+            # Re-raise HTTPExceptions (auth errors) to be handled by FastAPI
+            logger.error(f"Auth error in tenant middleware: {e.detail}")
+            raise e
         except Exception as e:
+            import traceback
             logger.error(f"Tenant middleware error: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Request path: {request.url.path}")
+            logger.error(f"Request method: {request.method}")
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"error": "Tenant middleware error"}
+                content={"error": f"Tenant middleware error: {str(e)}"}
             )
         
         finally:
@@ -93,26 +101,45 @@ class TenantMiddleware(BaseHTTPMiddleware):
         """
         Extract tenant from various sources and return full tenant object
         """
-        db = SessionLocal()
+        db = None
         try:
+            db = SessionLocal()
+            logger.debug(f"Created database session for tenant extraction: {id(db)}")
+            
             # Method 1: From JWT token (most common)
             tenant = await self._extract_from_jwt(request, db)
             if tenant:
+                logger.debug(f"Extracted tenant {tenant.id} from JWT token")
                 return tenant
             
             # Method 2: From subdomain (if using subdomain routing)
             tenant = self._extract_from_subdomain(request, db)
             if tenant:
+                logger.debug(f"Extracted tenant {tenant.id} from subdomain")
                 return tenant
             
             # Method 3: From custom header
             tenant = self._extract_from_header(request, db)
             if tenant:
+                logger.debug(f"Extracted tenant {tenant.id} from header")
                 return tenant
             
+            logger.debug("No tenant found from any extraction method")
             return None
+            
+        except Exception as e:
+            logger.error(f"Error in _extract_tenant: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise e
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                    logger.debug(f"Closed database session: {id(db)}")
+                except Exception as e:
+                    logger.error(f"Error closing database session: {e}")
     
     async def _extract_from_jwt(self, request: Request, db) -> Optional[Tenant]:
         """
@@ -128,16 +155,33 @@ class TenantMiddleware(BaseHTTPMiddleware):
             
             # Decode token to get tenant_id
             from app.core.security import decode_token
-            payload = decode_token(token)
-            tenant_id = payload.get("tenant_id")
+            from jose import JWTError
+            from fastapi import HTTPException
             
-            if tenant_id:
-                return db.query(Tenant).filter_by(id=tenant_id, is_active=True).first()
+            try:
+                payload = decode_token(token)
+                tenant_id = payload.get("tenant_id")
+                
+                if tenant_id:
+                    return db.query(Tenant).filter_by(id=tenant_id, is_active=True).first()
+                
+                return None
+                
+            except HTTPException as e:
+                # Re-raise HTTPException from decode_token to let auth middleware handle it
+                logger.error(f"JWT token validation error: {e.detail}")
+                raise e
+            except JWTError as e:
+                # JWT decode errors - let auth middleware handle these
+                logger.error(f"JWT decode error: {e}")
+                return None
             
-            return None
-            
-        except Exception:
-            # Token validation will be handled by auth middleware
+        except HTTPException:
+            # Re-raise HTTPExceptions (token expired, invalid, etc.)
+            raise
+        except Exception as e:
+            # Other errors (database, etc.)
+            logger.error(f"Error extracting tenant from JWT: {e}")
             return None
     
     def _extract_from_subdomain(self, request: Request, db) -> Optional[Tenant]:

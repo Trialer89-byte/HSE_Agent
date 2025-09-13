@@ -24,7 +24,6 @@ class CrossValidationAgent:
         
         validation_results = {
             "validation_complete": True,
-            "confidence_score": 0.85,
             "cross_checks_performed": [],
             "conflicts_identified": [],
             "gaps_identified": [],
@@ -89,11 +88,11 @@ class CrossValidationAgent:
         return all_risks
     
     def _collect_all_controls(self, specialist_results: Dict[str, Any]) -> List[str]:
-        """Collect all control measures from specialists"""
+        """Collect all mitigation actions from specialists"""
         all_controls = []
         for specialist, result in specialist_results.items():
             if isinstance(result, dict) and "error" not in result:
-                controls = result.get("control_measures", [])
+                controls = result.get("mitigation_actions", [])
                 all_controls.extend(controls)
         return all_controls
     
@@ -322,14 +321,9 @@ class CrossValidationAgent:
                     "id": f"XV_{item_id:03d}",
                     "type": "critical_integration",
                     "priority": "critica",
-                    "title": f"CRITICO: {conflict['description']}",
-                    "description": conflict["required_action"],
-                    "suggested_action": conflict["required_action"],
+                    "suggested_action": f"CRITICO: {conflict['description']} - {conflict['required_action']}",
                     "specialists_involved": conflict["specialists_involved"],
                     "additional_controls": conflict.get("additional_controls", []),
-                    "estimated_effort": "2-4 ore pianificazione + implementazione",
-                    "responsible_role": "HSE Manager + Specialist Coordinatori",
-                    "consequences_if_ignored": "Potenziale incidente grave/fatale",
                     "frontend_display": {
                         "color": "red",
                         "icon": "alert-triangle",
@@ -350,9 +344,6 @@ class CrossValidationAgent:
                     "suggested_action": f"Richiedere analisi completa da {gap['missing_specialist']}",
                     "rationale": gap["rationale"],
                     "impact_if_ignored": gap["impact"],
-                    "estimated_effort": "30-60 minuti",
-                    "responsible_role": "HSE Coordinator",
-                    "consequences_if_ignored": gap["impact"],
                     "frontend_display": {
                         "color": "orange", 
                         "icon": "user-plus",
@@ -368,14 +359,9 @@ class CrossValidationAgent:
                     "id": f"XV_{item_id:03d}",
                     "type": "risk_interaction",
                     "priority": "alta",
-                    "title": f"Gestire interazione: {interaction['description']}",
-                    "description": f"Rischio escalato: {interaction['escalated_risk']}",
-                    "suggested_action": f"Implementare controlli combinati per {interaction['escalated_risk']}",
+                    "suggested_action": f"Gestire interazione: {interaction['description']} - Implementare controlli combinati per {interaction['escalated_risk']}",
                     "mitigation_factor": interaction["mitigation_factor"],
                     "combined_controls": interaction["combined_controls"],
-                    "estimated_effort": "1-2 ore implementazione",
-                    "responsible_role": "Team Multidisciplinare",
-                    "consequences_if_ignored": f"Escalation rischio: {interaction['mitigation_factor']}",
                     "frontend_display": {
                         "color": "purple",
                         "icon": "layers",

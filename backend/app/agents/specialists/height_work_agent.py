@@ -12,27 +12,7 @@ class HeightWorkSpecialist(BaseHSEAgent):
         super().__init__(
             name="HeightWork_Specialist",
             specialization="Lavori in Quota",
-            activation_keywords=[
-                # Standard terms
-                "height", "altezza", "quota",
-                "ladder", "scala", "scale",
-                "scaffold", "ponteggio", "impalcatura",
-                "roof", "tetto", "copertura",
-                "platform", "piattaforma",
-                "elevated", "sopraelevato",
-                "fall", "caduta",
-                "crane", "gru",
-                "lift", "sollevamento", "cestello",
-                
-                # Height indicators
-                "metri", "meter", "m di altezza",
-                "piano", "floor", "livello",
-                
-                # Equipment
-                "harness", "imbracatura",
-                "lanyard", "cordino",
-                "anchor", "ancoraggio"
-            ]
+            activation_keywords=[]  # Activated by Risk Mapping Agent
         )
     
     def _get_system_message(self) -> str:
@@ -111,130 +91,137 @@ DPI SPECIFICI LAVORI IN QUOTA:
 - Kit evacuazione/recupero
 """
     
-    def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze permit for work at height risks"""
+    async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """AI-based analysis of work at height risks and existing measures adequacy"""
         
-        risks = []
-        controls = []
-        dpi_required = []
+        # Get existing DPI and actions from permit
+        existing_dpi = permit_data.get('dpi_required', [])
+        existing_actions = permit_data.get('risk_mitigation_actions', [])
         
-        permit_text = f"{permit_data.get('title', '')} {permit_data.get('description', '')} {permit_data.get('location', '')} {permit_data.get('equipment', '')}".lower()
+        # Get available documents for context
+        available_docs = context.get("documents", [])
         
-        # Check for height indicators
-        height_detected = False
-        height_level = "unknown"
+        # Search for height work specific documents
+        try:
+            tenant_id = context.get("user_context", {}).get("tenant_id", 1)
+            specialized_docs = await self.search_specialized_documents(
+                query=f"{permit_data.get('title', '')} {permit_data.get('description', '')}",
+                tenant_id=tenant_id,
+                limit=3
+            )
+            all_docs = available_docs + specialized_docs
+        except Exception as e:
+            print(f"[{self.name}] Document search failed: {e}")
+            all_docs = available_docs
         
-        # Check for explicit height mentions
-        import re
-        height_pattern = r'(\d+)\s*(m|metri|meter)'
-        height_match = re.search(height_pattern, permit_text)
-        if height_match:
-            height_value = int(height_match.group(1))
-            if height_value >= 2:
-                height_detected = True
-                height_level = "alta" if height_value > 6 else "media"
+        # Create AI analysis prompt
+        permit_summary = f"""
+PERMESSO DI LAVORO - ANALISI LAVORI IN QUOTA:
+
+TITOLO: {permit_data.get('title', 'N/A')}
+DESCRIZIONE: {permit_data.get('description', 'N/A')}
+TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
+UBICAZIONE: {permit_data.get('location', 'N/A')}
+ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+
+DPI ATTUALMENTE PREVISTI:
+{existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+
+AZIONI MITIGAZIONE RISCHI ATTUALI:
+{existing_actions if existing_actions else 'Nessuna azione specificata'}
+
+ANALIZZA IL SEGUENTE:
+1. Questo lavoro comporta rischi di lavori in quota (>2 metri)?
+2. Quali sono i rischi specifici identificati (caduta, oggetti, meteo, ecc.)?
+3. Le attuali DPI sono adeguate per i rischi in quota identificati?
+4. Le attuali azioni di mitigazione sono sufficienti?
+5. Quali DPI aggiuntive sono necessarie (imbracature, cordini, elmetti, ecc.)?
+6. Quali procedure di sicurezza mancano?
+
+Fornisci risposta strutturata in JSON con:
+- height_work_detected: boolean
+- risk_level: "basso|medio|alto|critico"
+- specific_risks: array di oggetti con type, description, severity
+- existing_dpi_adequacy: "adeguata|inadeguata|parziale"
+- existing_actions_adequacy: "adeguate|inadeguate|parziali"  
+- missing_dpi: array di DPI mancanti con standard EN
+- missing_controls: array di procedure/controlli mancanti
+- recommendations: array di raccomandazioni prioritarie
+        """
         
-        # Check for height-related keywords
-        if any(keyword in permit_text for keyword in [
-            "tetto", "roof", "scala", "ladder", "ponteggio", "scaffold",
-            "piano", "floor", "sopraelevat", "elevated", "quota", "height"
-        ]):
-            height_detected = True
-            if height_level == "unknown":
-                height_level = "media"  # Conservative assumption
-        
-        if height_detected:
-            # Primary fall risk
-            risks.append({
-                "type": "fall_from_height",
-                "description": f"Rischio caduta dall'alto - Lavori in quota",
-                "severity": height_level,
-                "controls_required": ["fall_protection", "anchor_points", "safety_harness"]
-            })
+        # Get AI analysis
+        try:
+            ai_response = await self.get_gemini_response(permit_summary, all_docs)
+            # Parse AI response (assuming JSON format)
+            import json
+            import re
             
-            # Falling objects risk
-            risks.append({
-                "type": "falling_objects",
-                "description": "Rischio caduta materiali dall'alto",
-                "severity": "media",
-                "controls_required": ["tool_lanyards", "exclusion_zone", "toe_boards"]
-            })
+            # Extract JSON from AI response
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                ai_analysis = json.loads(json_match.group())
+            else:
+                # No valid JSON found - return error, don't use hardcoded fallback
+                print(f"[{self.name}] No valid JSON response from AI")
+                return self.create_error_response("AI did not provide valid JSON analysis")
+                
+        except Exception as e:
+            print(f"[{self.name}] AI analysis failed: {e}")
+            # Return error - no hardcoded fallback
+            return self.create_error_response(str(e))
+        
+        # Build response based on AI analysis
+        if ai_analysis.get("height_work_detected", False):
+            classification = "LAVORI IN QUOTA IDENTIFICATI"
             
-            # Environmental risks
-            if "outdoor" in permit_text or "esterno" in permit_text or "roof" in permit_text:
-                risks.append({
-                    "type": "weather_hazards",
-                    "description": "Rischi meteo (vento, pioggia) per lavori in quota esterni",
-                    "severity": "media",
-                    "controls_required": ["weather_monitoring", "stop_work_criteria"]
+            # Convert AI analysis to standard format
+            risks_identified = []
+            for risk in ai_analysis.get("specific_risks", []):
+                risks_identified.append({
+                    "type": risk.get("type", "height_risk"),
+                    "source": self.name,
+                    "description": risk.get("description", "Rischio lavori in quota"),
+                    "severity": risk.get("severity", "medio")
                 })
             
-            # Mandatory controls for work at height
-            controls.extend([
-                "Valutazione rischi specifica per lavori in quota",
-                "Verifica portata e stabilità strutture/supporti",
-                "Installazione protezioni collettive (parapetti, reti)",
-                "Delimitazione area sottostante (rischio caduta oggetti)",
-                "Sistema anticaduta con doppio cordino",
-                "Punti di ancoraggio certificati EN 795",
-                "Supervisore formato presente durante lavori",
-                "Piano di emergenza e recupero specifico",
-                "Controllo meteo (stop se vento >60km/h)",
-                "Ispezione pre-uso DPI anticaduta"
-            ])
-            
-            # Specific PPE for height work
-            dpi_required.extend([
-                "Imbracatura anticaduta EN 361",
-                "Doppio cordino con assorbitore EN 355",
-                "Elmetto con sottogola EN 397",
-                "Scarpe antiscivolo S3 con suola antiperforazione",
-                "Guanti con grip migliorato",
-                "Giubbotto alta visibilità"
-            ])
-            
-            # Check for specific equipment
-            if "scala" in permit_text or "ladder" in permit_text:
-                controls.append("Verifica conformità scale EN 131")
-                controls.append("Posizionamento scala 1:4 (75°)")
-                controls.append("Assistente a terra per stabilizzazione")
-            
-            if "ponteggio" in permit_text or "scaffold" in permit_text:
-                controls.append("Verifica PiMUS (Piano Montaggio Uso Smontaggio)")
-                controls.append("Controllo ancoraggi ponteggio")
-                controls.append("Parapetti completi su tutti i lati")
             
             return {
                 "specialist": self.name,
-                "classification": "LAVORI IN QUOTA IDENTIFICATI",
-                "risks_identified": risks,
-                "control_measures": controls,
-                "dpi_requirements": dpi_required,
-                "permits_required": ["Permesso Lavori in Quota"],
-                "training_requirements": [
-                    "Formazione lavori in quota (8 ore min)",
-                    "Addestramento uso DPI anticaduta",
-                    "Corso montaggio ponteggi (se applicabile)"
-                ],
-                "emergency_measures": [
-                    "Piano di recupero/evacuazione",
-                    "Kit primo soccorso trauma",
-                    "Comunicazione con emergenza medica",
-                    "Barella e sistema recupero disponibili"
-                ],
-                "stop_work_conditions": [
-                    "Vento superiore a 60 km/h",
-                    "Temporali/fulmini in arrivo",
-                    "Ghiaccio o neve su superfici",
-                    "Visibilità insufficiente",
-                    "DPI danneggiati o non conformi"
-                ]
+                "classification": classification,
+                "ai_analysis_used": True,
+                "risks_identified": risks_identified,
+                "recommended_actions": ai_analysis.get("recommendations", []),
+                "existing_measures_evaluation": {
+                    "existing_dpi": existing_dpi,
+                    "existing_actions": existing_actions,
+                    "dpi_adequacy": ai_analysis.get("existing_dpi_adequacy", "da_valutare").upper(),
+                    "actions_adequacy": ai_analysis.get("existing_actions_adequacy", "da_valutare").upper(),
+                    "ai_assessment": ai_analysis.get("recommendations", []),
+                    "risk_level": ai_analysis.get("risk_level", "medio"),
+                    "critical_gaps": {
+                        "missing_dpi": len(ai_analysis.get("missing_dpi", []))
+                    }
+                },
+                "permits_required": ["Permesso Lavori in Quota"] if ai_analysis.get("height_work_detected") else [],
+                "ai_recommendations": ai_analysis.get("recommendations", []),
+                "recommendations": ai_analysis.get("recommendations", []),  # Keep for backwards compatibility
+                "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
             }
         
         return {
             "specialist": self.name,
             "classification": "Nessun lavoro in quota identificato",
+            "ai_analysis_used": True,
             "risks_identified": [],
-            "control_measures": [],
-            "dpi_requirements": []
+            "recommended_actions": [],
+            "existing_measures_evaluation": {
+                "existing_dpi": existing_dpi,
+                "existing_actions": existing_actions,
+                "dpi_adequacy": "N/A - Lavoro non in quota",
+                "actions_adequacy": "N/A - Lavoro non in quota",
+                "ai_assessment": ["Nessun rischio specifico per lavori in quota identificato"],
+                "risk_level": ai_analysis.get("risk_level", "basso") if 'ai_analysis' in locals() else "basso"
+            },
+            "recommendations": [],  # Keep for backwards compatibility
+            "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }

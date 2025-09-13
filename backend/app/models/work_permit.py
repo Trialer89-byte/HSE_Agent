@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, JSON, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 
 from app.config.database import Base
@@ -18,36 +18,33 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
     # Extended Fields
     work_type = Column(String(100))
     location = Column(String(255))
-    duration_hours = Column(Integer)
-    priority_level = Column(String(20), default="medium")
+    risk_level = Column(String(20), default="medium")
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
     
     # Risk Mitigation Actions (new field)
     risk_mitigation_actions = Column(JSON, default=[])
     
     # AI Analysis Results
     ai_analysis = Column(JSON, default={})
-    ai_confidence = Column(Float, default=0.0)
-    ai_version = Column(String(20))
+    ai_version = Column(String(50))
     
     # Structured AI Results
-    content_analysis = Column(JSON, default={})
-    risk_assessment = Column(JSON, default={})
-    compliance_check = Column(JSON, default={})
-    dpi_recommendations = Column(JSON, default={})
     action_items = Column(JSON, default=[])
     
     # Workflow
     status = Column(String(50), default="draft", index=True)
+    is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id"))
     approved_by = Column(Integer, ForeignKey("users.id"))
     
     # Timestamps
     analyzed_at = Column(DateTime)
+    valid_from = Column(DateTime)
+    valid_until = Column(DateTime)
     
     # Extensibility
-    custom_fields = Column(JSON, default={})
     attachments = Column(JSON, default=[])
-    tags = Column(JSON, default=[])
     
     # Relationships
     tenant = relationship("Tenant", back_populates="work_permits")
@@ -56,6 +53,14 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
     
     def __repr__(self):
         return f"<WorkPermit(id={self.id}, title='{self.title}', status='{self.status}')>"
+    
+    @property
+    def duration_hours(self) -> int:
+        """Calculate duration in hours from start_date to end_date"""
+        if self.start_date and self.end_date:
+            duration = self.end_date - self.start_date
+            return int(duration.total_seconds() / 3600)
+        return 0
     
     def to_dict(self):
         """Convert permit to dictionary for AI processing"""
@@ -66,14 +71,9 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
             "dpi_required": self.dpi_required,
             "work_type": self.work_type,
             "location": self.location,
-            "duration_hours": self.duration_hours,
-            "priority_level": self.priority_level,
-            "risk_mitigation_actions": self.risk_mitigation_actions,  # Include new field
-            "custom_fields": self.custom_fields,
-            "tags": self.tags,
-            # Include frequently used fields from custom_fields for agent compatibility
-            "equipment": self.custom_fields.get("equipment", "") if self.custom_fields else "",
-            "workers_count": self.custom_fields.get("workers_count", "") if self.custom_fields else "",
-            "identified_risks": self.custom_fields.get("identified_risks", []) if self.custom_fields else [],
-            "control_measures": self.custom_fields.get("control_measures", []) if self.custom_fields else []
+            "duration_hours": self.duration_hours,  # Now calculated property
+            "risk_level": self.risk_level,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "risk_mitigation_actions": self.risk_mitigation_actions
         }

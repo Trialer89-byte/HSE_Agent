@@ -12,7 +12,7 @@ class MechanicalSpecialist(BaseHSEAgent):
         super().__init__(
             name="Mechanical_Specialist",
             specialization="Rischi Meccanici e Energia Immagazzinata",
-            activation_keywords=["mechanical", "meccanico", "pressure", "pressione", "rotating", "rotante", "pinch", "crush"]
+            activation_keywords=[]  # Activated by Risk Mapping Agent
         )
     
     def _get_system_message(self) -> str:
@@ -94,103 +94,239 @@ Analisi dettagliata dei rischi meccanici con:
         return False
     
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze mechanical hazards and risks"""
+        """AI-powered mechanical hazards analysis"""
         
-        # Combine text for analysis
-        full_text = f"""
-        {permit_data.get('title', '')} {permit_data.get('description', '')} 
-        {permit_data.get('work_type', '')} {permit_data.get('location', '')}
-        """
+        # Get existing DPI and actions from permit
+        existing_dpi = permit_data.get('dpi_required', [])
+        existing_actions = permit_data.get('risk_mitigation_actions', [])
         
-        # Identify mechanical hazards
-        mechanical_hazards = self._identify_mechanical_hazards(full_text, permit_data)
+        # Get available documents for context
+        available_docs = context.get("documents", [])
         
-        # Assess energy sources
-        energy_sources = self._assess_energy_sources(full_text, permit_data)
+        # Search for mechanical safety documents
+        try:
+            tenant_id = context.get("user_context", {}).get("tenant_id", 1)
+            specialized_docs = await self.search_specialized_documents(
+                query=f"{permit_data.get('title', '')} {permit_data.get('description', '')}",
+                tenant_id=tenant_id,
+                limit=3
+            )
+            all_docs = available_docs + specialized_docs
+        except Exception as e:
+            print(f"[{self.name}] Document search failed: {e}")
+            all_docs = available_docs
         
-        # Generate control measures
-        control_measures = self._generate_control_measures(mechanical_hazards, energy_sources)
+        # Create comprehensive AI analysis prompt
+        permit_summary = f"""
+PERMESSO DI LAVORO - ANALISI SICUREZZA MECCANICA:
+
+TITOLO: {permit_data.get('title', 'N/A')}
+DESCRIZIONE: {permit_data.get('description', 'N/A')}
+TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
+UBICAZIONE: {permit_data.get('location', 'N/A')}
+ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+
+DPI ATTUALMENTE PREVISTI:
+{existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+
+AZIONI MITIGAZIONE RISCHI ATTUALI:
+{existing_actions if existing_actions else 'Nessuna azione specificata'}
+
+ANALIZZA COMPLETAMENTE I RISCHI MECCANICI:
+
+1. IDENTIFICAZIONE RISCHI MECCANICI:
+   - Schiacciamento/intrappolamento
+   - Taglio/perforazione/abrasione  
+   - Proiezione materiali/schegge
+   - Caduta oggetti dall'alto
+   - Urti/colpi/impatti
+   - Vibrazioni hand-arm e corpo intero
+   - Rumore >85 dB(A)
+
+2. FONTI DI ENERGIA:
+   - Energia cinetica (rotazione, movimento)
+   - Energia potenziale (molle, contrappesi)
+   - Pressione fluidi (idraulica, pneumatica, vapore)
+   - Energia elettrica su sistemi meccanici
+   - Energia termica (attrito, compressione)
+
+3. ATTREZZATURE E MACCHINARI:
+   - PLE/piattaforme elevabili
+   - Gru/sollevatori/paranchi
+   - Utensili elettrici/pneumatici
+   - Sistemi in pressione
+   - Parti rotanti/nastri trasportatori
+   - Presse/cesoie/macchine utensili
+
+4. VALUTAZIONE MISURE ESISTENTI:
+   - Adeguatezza DPI attuali per rischi meccanici identificati
+   - Completezza procedure di isolamento energia
+   - Necessità procedura LOTO (Lock-Out Tag-Out)
+   - Conformità alle normative D.Lgs 81/08
+
+5. RACCOMANDAZIONI SPECIFICHE:
+   - DPI mancanti con normative EN specifiche
+   - Controlli tecnici di sicurezza
+   - Procedure operative sicure
+   - Formazione/addestramento necessari
+   - Attrezzature ausiliarie richieste
+
+Fornisci risposta strutturata in JSON con:
+- mechanical_risks: array di rischi identificati con severity (bassa/media/alta/critica)
+- energy_sources: fonti energetiche presenti e metodi isolamento
+- existing_measures_adequacy: valutazione misure attuali (adeguate/inadeguate/parziali)
+- missing_dpi: array DPI mancanti con standard EN
+- control_measures: controlli tecnici/procedurali necessari
+- loto_required: boolean se necessaria procedura LOTO
+- training_needs: formazione specifica richiesta
+- risk_level: livello rischio complessivo (basso/medio/alto/critico)
+"""
         
-        # Determine required DPI
-        required_dpi = self._determine_mechanical_dpi(mechanical_hazards)
+        # Get AI analysis
+        try:
+            ai_response = await self.get_gemini_response(permit_summary, all_docs)
+            
+            # Parse AI response
+            import json
+            import re
+            
+            # Extract JSON from AI response
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                ai_analysis = json.loads(json_match.group())
+            else:
+                # Fallback parsing if no JSON found
+                ai_analysis = {
+                    "mechanical_risks": [{"type": "generic_mechanical", "description": "Rischi meccanici da valutare", "severity": "media"}],
+                    "energy_sources": [],
+                    "existing_measures_adequacy": "inadeguate",
+                    "missing_dpi": ["Guanti meccanici EN 388", "Scarpe antinfortunistiche S3"],
+                    "loto_required": False,
+                    "training_needs": ["Formazione uso attrezzature"],
+                    "risk_level": "medio"
+                }
+                
+        except Exception as e:
+            print(f"[{self.name}] Analysis failed: {e}")
+            # Use standardized error response
+            return self.create_error_response(e)
         
-        # Generate LOTO requirements
-        loto_requirements = self._generate_loto_requirements(energy_sources)
+        # Convert AI analysis to standard orchestrator format
+        risks_identified = []
+        for risk in ai_analysis.get("mechanical_risks", []):
+            risks_identified.append({
+                "type": risk.get("type", "mechanical_risk"),
+                "source": self.name,
+                "description": risk.get("description", "Rischio meccanico"),
+                "severity": risk.get("severity", "media")
+            })
         
-        # Calculate risk level
-        risk_level = self._calculate_mechanical_risk(mechanical_hazards, energy_sources)
+        # Analyze existing actions and provide consolidated recommendations
+        recommended_actions = self._analyze_and_recommend_actions(
+            existing_actions, 
+            [],
+            ai_analysis.get("loto_required", False),
+            ai_analysis.get("risk_level", "medio")
+        )
         
-        # CONVERT TO STANDARD OUTPUT FORMAT per l'orchestratore
+        
         return {
-            # FORMATO STANDARD RICHIESTO DALL'ORCHESTRATORE
-            "risks_identified": [
-                {
-                    "type": hazard["type"],
-                    "source": "Mechanical_Specialist",
-                    "description": hazard["description"],
-                    "severity": hazard["severity"],
-                    "likelihood": hazard.get("likelihood", "media"),
-                    "energy_type": hazard.get("energy_type", "mechanical")
-                } for hazard in mechanical_hazards
-            ] if mechanical_hazards else [
-                {
-                    "type": "mechanical_standard",
-                    "source": "Mechanical_Specialist",
-                    "description": "Rischi meccanici standard da valutare",
-                    "severity": "media"
-                }
-            ],
-            
-            "dpi_requirements": [
-                f"{dpi['type']} ({dpi['standard']})" for dpi in required_dpi
-            ] + [
-                f"DPI specifici per energia {source['type']}" for source in energy_sources
-            ],
-            
-            "control_measures": control_measures + self._generate_isolation_procedures(energy_sources) + [
-                f"Attrezzature specializzate: {', '.join(self._identify_specialized_equipment(mechanical_hazards))}"
-            ] if self._identify_specialized_equipment(mechanical_hazards) else control_measures,
-            
-            "permits_required": self._identify_required_permits(mechanical_hazards, energy_sources),
-            
-            "document_citations": [
-                {
-                    "type": "normativa_meccanica",
-                    "source": "D.Lgs 81/08 - Allegato VI",
-                    "description": "Requisiti minimi attrezzature di lavoro",
-                    "mandatory": True
-                },
-                {
-                    "type": "standard_loto",
-                    "source": "UNI 11670:2017", 
-                    "description": "Procedure Lock Out Tag Out",
-                    "mandatory": True if energy_sources else False
-                }
-            ] + [
-                {
-                    "type": "norma_dpi_meccanico",
-                    "source": dpi["standard"],
-                    "description": f"Standard per {dpi['type']}",
-                    "mandatory": dpi["mandatory"]
-                } for dpi in required_dpi
-            ],
-            
-            # DETTAGLI TECNICI ORIGINALI (mantenuti per compatibilità)
-            "specialist": "Mechanical_Specialist",
-            "risk_domain": "mechanical_hazards", 
-            "analysis_complete": True,
-            "confidence": 0.85,
-            "mechanical_hazards_identified": mechanical_hazards,
-            "energy_sources": energy_sources,
-            "risk_level": risk_level,
-            "loto_requirements": loto_requirements,
-            "isolation_procedures": self._generate_isolation_procedures(energy_sources),
-            "specialized_equipment": self._identify_specialized_equipment(mechanical_hazards),
-            "training_requirements": self._generate_training_requirements(mechanical_hazards),
-            "inspection_points": self._define_inspection_points(mechanical_hazards),
-            "emergency_procedures": self._generate_emergency_procedures(mechanical_hazards)
+            "specialist": self.name,
+            "classification": f"RISCHI MECCANICI - Livello: {str(ai_analysis.get('risk_level', 'medio')).upper()}",
+            "ai_analysis_used": True,
+            "risks_identified": risks_identified,
+            "recommended_actions": recommended_actions,
+            "existing_measures_evaluation": {
+                "existing_dpi": existing_dpi,
+                "existing_actions": existing_actions,
+                "dpi_adequacy": str(ai_analysis.get("existing_measures_adequacy", "da_valutare")).upper(),
+                "actions_adequacy": str(ai_analysis.get("existing_measures_adequacy", "da_valutare")).upper(),
+                "risk_level": ai_analysis.get("risk_level", "medio"),
+                "loto_required": ai_analysis.get("loto_required", False)
+            },
+            "permits_required": ["Permesso Lavori Meccanici"] if ai_analysis.get("risk_level") in ["alto", "critico"] else [],
+            "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }
     
+    def _analyze_and_recommend_actions(
+        self, 
+        existing_actions: List[str], 
+        ai_suggested_measures: List[str],
+        loto_required: bool,
+        risk_level: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Analyze existing actions and provide consolidated recommendations by criticality
+        Limited to max 10 actions prioritized by risk mitigation importance
+        """
+        recommendations = []
+        
+        # Critical actions (must be implemented)
+        critical_actions = []
+        if loto_required:
+            critical_actions.extend([
+                "Implementare procedura LOTO (Lock Out Tag Out) obbligatoria",
+                "Verificare isolamento completo di tutte le fonti energia",
+                "Utilizzare lucchetti e cartellini di segnalazione personali"
+            ])
+        
+        if risk_level in ["alto", "critico"]:
+            critical_actions.append("Presenza obbligatoria di personale qualificato")
+            critical_actions.append("Delimitazione area di lavoro con segnaletica")
+        
+        # High priority actions
+        high_priority_actions = []
+        for measure in ai_suggested_measures[:3]:  # Top 3 AI suggestions
+            if measure not in critical_actions:
+                high_priority_actions.append(measure)
+        
+        # Medium priority actions (improvements to existing measures)
+        medium_priority_actions = []
+        if existing_actions:
+            medium_priority_actions.append("Verifica adeguatezza delle misure esistenti")
+            medium_priority_actions.append("Aggiornamento procedure operative specifiche")
+        else:
+            medium_priority_actions.extend([
+                "Sviluppo di procedure operative standard",
+                "Formazione specifica per operatori"
+            ])
+        
+        # Build prioritized recommendations
+        action_id = 1
+        
+        # Add critical actions
+        for action in critical_actions[:4]:  # Max 4 critical
+            recommendations.append({
+                "id": action_id,
+                "action": action,
+                "criticality": "critica",
+                "type": "safety_control"
+            })
+            action_id += 1
+        
+        # Add high priority actions  
+        for action in high_priority_actions[:3]:  # Max 3 high
+            recommendations.append({
+                "id": action_id,
+                "action": action,
+                "criticality": "alta",
+                "type": "risk_mitigation"
+            })
+            action_id += 1
+            
+        # Add medium priority actions
+        for action in medium_priority_actions[:3]:  # Max 3 medium
+            recommendations.append({
+                "id": action_id,
+                "action": action,
+                "criticality": "media",
+                "type": "improvement"
+            })
+            action_id += 1
+            
+        # Limit to maximum 10 total actions
+        return recommendations[:10]
+
     def _identify_mechanical_hazards(self, text: str, permit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Identify specific mechanical hazards"""
         hazards = []

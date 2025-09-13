@@ -8,7 +8,7 @@ from datetime import datetime
 
 from app.config.settings import settings
 from app.config.database import Base, engine
-from app.routers import auth, permits, documents, admin_tenants, public_tenants, test_permits, test_documents
+from app.routers import auth, permits, documents, admin_tenants, public_tenants
 from app.middleware.security import SecurityMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.middleware.audit import AuditMiddleware
@@ -31,13 +31,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
     
-    # Create database tables
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Failed to create database tables: {e}")
-        raise
+    # Skip database table creation - tables already exist
+    logger.info("Skipping database table creation (tables already exist)")
     
     # Verify external services connectivity
     try:
@@ -46,8 +41,16 @@ async def lifespan(app: FastAPI):
         storage_service = StorageService()
         logger.info("MinIO connection verified")
         
-        # Weaviate temporarily disabled
-        logger.info("Weaviate connection skipped (disabled)")
+        # Test Weaviate connection
+        try:
+            from app.services.vector_service import VectorService
+            vector_service = VectorService()
+            if vector_service.client:
+                logger.info("Weaviate connection verified")
+            else:
+                logger.warning("Weaviate connection failed - running in PostgreSQL-only mode")
+        except Exception as weaviate_error:
+            logger.warning(f"Weaviate connection failed: {weaviate_error}")
         
     except Exception as e:
         logger.warning(f"External service connectivity issue: {e}")
@@ -66,8 +69,58 @@ app = FastAPI(
     description="Sistema HSE Backend Multi-Agente Enterprise per gestione permessi di lavoro industriali",
     docs_url="/api/docs" if settings.debug else None,
     redoc_url="/api/redoc" if settings.debug else None,
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Add security schemes for Swagger UI
+    openapi_tags=[
+        {"name": "Authentication", "description": "Authentication and authorization"},
+        {"name": "Work Permits", "description": "Work permit management"},
+        {"name": "Documents", "description": "Document management"},
+        {"name": "Admin", "description": "Administrative operations"},
+        {"name": "Public", "description": "Public endpoints"}
+    ]
 )
+
+# Add security scheme for JWT Bearer tokens
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Add Bearer token security scheme
+    openapi_schema["components"]["securitySchemes"] = {
+        "HTTPBearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your JWT token. After login, use the token from the response."
+        }
+    }
+    
+    # Apply security globally to all endpoints that need auth
+    # This can be overridden per endpoint if needed
+    for path_item in openapi_schema["paths"].values():
+        for operation in path_item.values():
+            if isinstance(operation, dict) and "operationId" in operation:
+                # Skip public endpoints
+                if any(tag in operation.get("tags", []) for tag in ["Authentication"]):
+                    continue
+                # Skip specific public operations
+                if operation.get("operationId") in ["root", "health_check", "health_check_options", "system_info", "login"]:
+                    continue
+                # Add security requirement
+                if "security" not in operation:
+                    operation["security"] = [{"HTTPBearer": []}]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Add custom middleware (order matters!)
 # These are added first so they execute after CORS
@@ -79,7 +132,7 @@ app.add_middleware(SecurityMiddleware)
 # This ensures CORS headers are added before any other middleware runs
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://localhost:8888"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -93,8 +146,6 @@ app.include_router(permits.router)
 app.include_router(documents.router)
 app.include_router(admin_tenants.router)
 app.include_router(public_tenants.router)
-app.include_router(test_permits.router)  # TEST ROUTER - NO AUTH
-app.include_router(test_documents.router)  # TEST ROUTER - NO AUTH
 
 
 @app.get("/")

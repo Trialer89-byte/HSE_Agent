@@ -1,52 +1,18 @@
 """
-Chemical and ATEX Specialist Agent  
+Chemical and ATEX Specialist Agent - AI-powered chemical risk analysis
 """
 from typing import Dict, Any
 from ..base_agent import BaseHSEAgent
 
 
 class ChemicalSpecialist(BaseHSEAgent):
-    """Specialist for chemical hazards and explosive atmospheres"""
+    """AI-powered specialist for chemical hazards and explosive atmospheres"""
     
     def __init__(self):
         super().__init__(
             name="Chemical_Specialist",
             specialization="Rischi Chimici e Atmosfere Esplosive",
-            activation_keywords=[
-                # Chemical terms
-                "chemical", "chimico", "sostanza",
-                "toxic", "tossico", "nocivo",
-                "corrosive", "corrosivo",
-                "flammable", "infiammabile",
-                "explosive", "esplosivo",
-                "gas", "vapore", "vapor",
-                "fume", "fumo", "polvere",
-                "solvent", "solvente",
-                "acid", "acido",
-                "base", "alcalino",
-                
-                # ATEX indicators
-                "ATEX", "explosion", "esplosione",
-                "LEL", "LIE", "limite esplosivo",
-                "zone 0", "zone 1", "zone 2",
-                "zone 20", "zone 21", "zone 22",
-                
-                # Common chemicals
-                "oil", "olio", "petrolio",
-                "fuel", "carburante", "benzina",
-                "diesel", "gasolio",
-                "hydrogen", "idrogeno",
-                "methane", "metano",
-                "ammonia", "ammoniaca",
-                "H2S", "solfuro",
-                
-                # Activities
-                "tank", "serbatoio", "cisterna",
-                "storage", "stoccaggio",
-                "transfer", "travaso",
-                "mixing", "miscelazione",
-                "cleaning", "pulizia", "bonifica"
-            ]
+            activation_keywords=[]  # Activated by Risk Mapping Agent
         )
     
     def _get_system_message(self) -> str:
@@ -135,171 +101,181 @@ DPI CHIMICI SPECIFICI:
 - Occhiali/visiera: Tenuta stagna per vapori
 """
     
-    def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze permit for chemical and ATEX risks"""
+    async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """AI-powered chemical and ATEX risk analysis"""
         
-        risks = []
-        controls = []
-        dpi_required = []
+        # Get available documents for context
+        available_docs = context.get("documents", [])
+        user_context = context.get('user_context', {})
         
-        permit_text = f"{permit_data.get('title', '')} {permit_data.get('description', '')} {permit_data.get('location', '')} {permit_data.get('equipment', '')}".lower()
+        # Search for chemical/ATEX-specific documents
+        try:
+            tenant_id = user_context.get("tenant_id", 1)
+            chemical_docs = await self.search_specialized_documents(
+                query=f"chimico ATEX sicurezza sostanze SDS {permit_data.get('title', '')} {permit_data.get('description', '')}",
+                tenant_id=tenant_id,
+                limit=5
+            )
+            all_docs = available_docs + chemical_docs
+        except Exception as e:
+            print(f"[{self.name}] Document search failed: {e}")
+            all_docs = available_docs
         
-        # Detect chemical/ATEX indicators
-        chemical_work = False
-        atex_risk = False
-        substances = []
+        # Create comprehensive AI analysis prompt
+        permit_summary = f"""
+PERMESSO DI LAVORO - ANALISI RISCHI CHIMICI E ATEX:
+
+TITOLO: {permit_data.get('title', 'N/A')}
+DESCRIZIONE: {permit_data.get('description', 'N/A')}
+TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
+UBICAZIONE: {permit_data.get('location', 'N/A')}
+ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+
+ANALIZZA COMPLETAMENTE I RISCHI CHIMICI E ATMOSFERE ESPLOSIVE secondo:
+- Regolamento CLP (CE 1272/2008)
+- Direttive ATEX 99/92/CE e 2014/34/UE
+- D.Lgs 81/08 Titolo IX (Agenti Chimici)
+- CEI EN 60079 (Classificazione zone ATEX)
+
+1. IDENTIFICAZIONE SOSTANZE CHIMICHE:
+   - Presenza sostanze pericolose (CLP H-phrases)
+   - Idrocarburi, oli, combustibili
+   - Acidi, basi, solventi
+   - Gas compressi, vapori infiammabili
+   - Polveri combustibili
+   - Agenti CMR (Cancerogeni/Mutageni/Reprotossici)
+
+2. VALUTAZIONE RISCHI ATEX:
+   - Possibilità formazione atmosfera esplosiva
+   - Classificazione zone ATEX (0/1/2 per gas, 20/21/22 per polveri)
+   - Sorgenti di rilascio
+   - Limiti di esplosività LEL/UEL
+   - Presenza fonti di innesco
+
+3. RISCHI PER LA SALUTE:
+   - Tossicità acuta/cronica
+   - Corrosività/irritazione
+   - Sensibilizzazione respiratoria/cutanea
+   - Effetti cancerogeni/mutageni
+   - Vie di esposizione (inalazione/cutanea/orale)
+
+4. CONTROLLI DI SICUREZZA:
+   - Gerarchia controlli (eliminazione → sostituzione → controlli tecnici → DPI)
+   - Ventilazione generale/locale (LEV)
+   - Monitoraggio continuo atmosfera
+   - Sistemi rilevazione gas/vapori
+   - Procedure di bonifica
+
+5. DPI CHIMICI/ATEX:
+   - Protezione respiratoria (filtri A/B/E/K/P, SCBA)
+   - Indumenti chimici (Tipo 1-6)
+   - Guanti resistenti permeazione chimica
+   - Equipaggiamenti antistatici per ATEX
+   - Strumentazione certificata ATEX
+
+Fornisci analisi strutturata in JSON con:
+- chemical_substances_identified: sostanze chimiche rilevate
+- atex_risk_assessment: valutazione rischio esplosione
+- health_hazards: rischi per la salute
+- required_controls: controlli di sicurezza necessari
+- monitoring_requirements: monitoraggi richiesti
+- required_dpi: DPI chimici/ATEX specifici
+"""
         
-        # Check for fuel/oil (common in maintenance)
-        if any(term in permit_text for term in ["oil", "olio", "fuel", "benzina", "diesel", "gasolio", "petrolio"]):
-            chemical_work = True
-            atex_risk = True
-            substances.append("idrocarburi")
+        # Get AI analysis
+        try:
+            ai_response = await self.get_gemini_response(permit_summary, all_docs)
             
-        # Check for tank/vessel work
-        if any(term in permit_text for term in ["tank", "serbatoio", "cisterna", "vessel"]):
-            chemical_work = True
-            if any(term in permit_text for term in ["oil", "fuel", "chemical", "gas"]):
-                atex_risk = True
+            # Parse AI response
+            import json
+            import re
+            
+            # Extract JSON from AI response
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                ai_analysis = json.loads(json_match.group())
+            else:
+                # No valid JSON found - return error, don't use hardcoded fallback
+                print(f"[{self.name}] No valid JSON response from AI")
+                return self.create_error_response("AI did not provide valid JSON analysis")
                 
-        # Check for specific chemicals
-        if any(term in permit_text for term in ["chemical", "chimico", "toxic", "tossico", "corrosive", "solvent"]):
-            chemical_work = True
-            
-        # Check for gas/vapors
-        if any(term in permit_text for term in ["gas", "vapor", "vapore", "fume", "h2s", "ammonia"]):
-            chemical_work = True
-            atex_risk = True
-            
-        if chemical_work:
-            # Chemical exposure risk
-            risks.append({
-                "type": "chemical_exposure",
-                "description": f"Rischio esposizione chimica - {', '.join(substances) if substances else 'sostanze non specificate'}",
-                "severity": "alta" if atex_risk else "media",
-                "controls_required": ["sds_review", "ventilation", "monitoring"]
+        except Exception as e:
+            print(f"[{self.name}] AI analysis failed: {e}")
+            # Return error - no hardcoded fallback
+            return self.create_error_response(str(e))
+        
+        # Convert AI analysis to standard orchestrator format
+        risks_identified = []
+        
+        # Process chemical substances and health hazards
+        substances = ai_analysis.get("chemical_substances_identified", [])
+        health_hazards = ai_analysis.get("health_hazards", [])
+        atex_assessment = ai_analysis.get("atex_risk_assessment", "")
+        
+        # Add chemical risks
+        for hazard in health_hazards:
+            if hazard and "Nessun" not in hazard and "nessun" not in hazard:
+                severity = "critica" if any(term in hazard.lower() for term in ["critico", "atex", "esplosiv", "cancerogen"]) else "alta"
+                risks_identified.append({
+                    "type": "chemical_hazard",
+                    "source": self.name,
+                    "description": hazard,
+                    "severity": severity
+                })
+        
+        # Add ATEX risk if detected
+        if "alto" in atex_assessment.lower() or "critico" in atex_assessment.lower():
+            risks_identified.append({
+                "type": "atex_explosion",
+                "source": self.name,
+                "description": f"ATEX - Rischio esplosione: {atex_assessment}",
+                "severity": "critica"
             })
-            
-            if atex_risk:
-                # ATEX risk - Critical!
-                risks.append({
-                    "type": "explosion_atex",
-                    "description": "CRITICO: Rischio esplosione - Atmosfera potenzialmente esplosiva (ATEX)",
-                    "severity": "critica",
-                    "controls_required": ["gas_free_certificate", "continuous_monitoring", "atex_equipment", "hot_work_prohibition"]
-                })
-                
-                risks.append({
-                    "type": "fire_chemical",
-                    "description": "Rischio incendio da vapori infiammabili",
-                    "severity": "alta",
-                    "controls_required": ["elimination_ignition_sources", "grounding", "fire_suppression"]
-                })
-                
-                # ATEX specific controls
-                controls.extend([
-                    "Classificazione zona ATEX obbligatoria",
-                    "Certificato Gas-Free prima di qualsiasi lavoro",
-                    "Monitoraggio continuo LEL con allarme <10%",
-                    "Monitoraggio O2 (19.5-23.5%)",
-                    "Ventilazione forzata continua min 10 ricambi/ora",
-                    "Attrezzature certificate ATEX (II 2G o II 2D)",
-                    "Eliminazione TUTTE fonti innesco",
-                    "Messa a terra e equipotenzialità",
-                    "Permesso di lavoro speciale per zona ATEX",
-                    "Divieto assoluto lavori a caldo senza bonifica"
-                ])
-                
-                # ATEX PPE
-                dpi_required.extend([
-                    "Rilevatore multigas personale (LEL, O2, H2S, CO)",
-                    "Indumenti antistatici EN 1149",
-                    "Calzature antistatiche/conduttive",
-                    "Attrezzi antiscintilla (bronzo, ottone)",
-                    "Torce certificate ATEX"
-                ])
-            
-            # General chemical controls
-            controls.extend([
-                "Consultazione SDS (Schede Dati Sicurezza) PRIMA dei lavori",
-                "Valutazione rischio chimico specifica",
-                "Ventilazione adeguata area di lavoro",
-                "Kit assorbimento/neutralizzazione sversamenti",
-                "Doccia/lavaocchi di emergenza disponibile",
-                "Divieto mangiare/bere/fumare in area",
-                "Decontaminazione al termine lavori"
-            ])
-            
-            # Check for specific protection needs
-            if "acid" in permit_text or "acido" in permit_text:
-                dpi_required.extend([
-                    "Tuta antiacido Tipo 3",
-                    "Guanti PVC/Neoprene antiacido",
-                    "Visiera antiacido panoramica"
-                ])
-                controls.append("Neutralizzante specifico disponibile")
-                
-            elif "solvent" in permit_text or "solvente" in permit_text:
-                dpi_required.extend([
-                    "Respiratore con filtri A (vapori organici)",
-                    "Guanti nitrile resistenti solventi",
-                    "Tuta Tyvek Tipo 5/6"
-                ])
-                
-            # Standard chemical PPE
-            dpi_required.extend([
-                "Occhiali chimici a tenuta EN 166",
-                "Respiratore con filtri appropriati (ABEK-P3)",
-                "Guanti chimici secondo EN 374",
-                "Tuta chimica (minimo Tipo 6)",
-                "Stivali chimici resistenti"
-            ])
-            
-            # Additional measures for tank/confined space + chemicals
-            if "tank" in permit_text or "serbatoio" in permit_text:
-                controls.extend([
-                    "Bonifica completa e certificata del serbatoio",
-                    "Test atmosfera stratificato (alto/medio/basso)",
-                    "Piano evacuazione rapida",
-                    "SCBA di emergenza all'ingresso"
-                ])
-                
-            emergency_equipment = [
-                "Doccia di emergenza/lavaocchi",
-                "Kit neutralizzazione sversamenti",
-                "Coperte ignifughe",
-                "Estintori appropriati (polvere/CO2/schiuma)",
-                "SCBA per soccorritori"
-            ]
-            
-            return {
-                "specialist": self.name,
-                "classification": "RISCHIO CHIMICO" + (" + ATMOSFERA ESPLOSIVA ATEX" if atex_risk else ""),
-                "risks_identified": risks,
-                "control_measures": controls,
-                "dpi_requirements": dpi_required,
-                "equipment_requirements": emergency_equipment,
-                "permits_required": ["Permesso Esposizione Chimica"] + (["ATEX Work Permit"] if atex_risk else []),
-                "training_requirements": [
-                    "Formazione rischio chimico",
-                    "Lettura e comprensione SDS",
-                    "Uso corretto DPI chimici"
-                ] + (["Formazione ATEX", "Procedure emergenza esplosione"] if atex_risk else []),
-                "emergency_measures": [
-                    "Piano evacuazione immediata",
-                    "Procedure decontaminazione",
-                    "Antidoti specifici se applicabili",
-                    "Comunicazione con centro antiveleni"
-                ] + (["Procedura emergenza esplosione", "Isolamento area minimo 100m"] if atex_risk else []),
-                "monitoring_requirements": {
-                    "continuous": ["LEL (<10%)", "O2 (19.5-23.5%)"] if atex_risk else [],
-                    "periodic": ["Concentrazione vapori", "Qualità aria"]
-                }
-            }
+        
+        # If no significant risks detected
+        if not risks_identified:
+            risks_identified.append({
+                "type": "no_chemical_risk",
+                "source": self.name,
+                "description": "Nessun rischio chimico significativo identificato",
+                "severity": "bassa"
+            })
+        
+        monitoring = ai_analysis.get("monitoring_requirements", [])
+        
+        # Determine if ATEX controls are needed
+        is_atex_risk = any("atex" in str(risk).lower() or "esplosion" in str(risk).lower() for risk in risks_identified)
         
         return {
             "specialist": self.name,
-            "classification": "Nessun rischio chimico significativo identificato",
-            "risks_identified": [],
-            "control_measures": [],
-            "dpi_requirements": []
+            "classification": f"RISCHIO CHIMICO" + (" + ATMOSFERA ESPLOSIVA ATEX" if is_atex_risk else ""),
+            "ai_analysis_used": True,
+            "risks_identified": risks_identified,
+            "recommended_actions": ai_analysis.get("recommended_actions", ai_analysis.get("recommendations", [])),
+            "existing_measures_evaluation": {
+                "substances_identified": substances,
+                "atex_risk_level": atex_assessment,
+                "health_impact_assessment": health_hazards,
+                "risk_coverage": "comprehensive" if len(risks_identified) > 1 else "basic",
+                "ai_assessment": ai_analysis
+            },
+            "permits_required": ["Permesso Esposizione Chimica"] + (["ATEX Work Permit"] if is_atex_risk else []),
+            "training_requirements": [
+                "Formazione rischio chimico specifico",
+                "Lettura e comprensione SDS",
+                "Uso corretto DPI chimici"
+            ] + (["Formazione ATEX", "Procedure emergenza esplosione"] if is_atex_risk else []),
+            "emergency_measures": [
+                "Piano evacuazione immediata",
+                "Procedure decontaminazione",
+                "Comunicazione centro antiveleni"
+            ] + (["Procedura emergenza esplosione", "Isolamento area 100m"] if is_atex_risk else []),
+            "monitoring_requirements": monitoring,
+            "ai_recommendations": [
+                f"Sostanze identificate: {', '.join(substances[:3])}",
+                f"Valutazione ATEX: {atex_assessment}",
+                "Conformità Regolamento CLP e Direttive ATEX"
+            ],
+            "recommendations": ai_analysis.get("recommendations", []),  # Keep for backwards compatibility
+            "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }

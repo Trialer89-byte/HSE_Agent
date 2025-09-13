@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from app.config.database import SessionLocal, engine, Base
 from app.models.user import User
-from app.models.tenant import Tenant
+from app.models.tenant import Tenant, SubscriptionPlan, DeploymentMode
 from app.core.security import get_password_hash
 
 # Create tables
@@ -14,6 +14,7 @@ tenant = db.query(Tenant).filter(Tenant.name == "Default Company").first()
 if not tenant:
     tenant = Tenant(
         name="Default Company",
+        display_name="Default Company",
         domain="default.hse-enterprise.local",
         settings={
             "max_users": 100,
@@ -21,7 +22,7 @@ if not tenant:
             "ai_analysis_enabled": True,
             "require_approval": True
         },
-        subscription_plan="enterprise",
+        subscription_plan=SubscriptionPlan.ENTERPRISE,
         is_active=True
     )
     db.add(tenant)

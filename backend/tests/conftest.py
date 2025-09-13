@@ -178,7 +178,7 @@ def mock_openai_response():
                     "content": '''
                     {
                         "analysis_complete": true,
-                        "confidence_score": 0.8,
+
                         "agent_name": "TestAgent",
                         "test_field": "test_value"
                     }
@@ -249,7 +249,6 @@ class TestDataFactory:
             "duration_hours": 4,
             "dpi_required": ["casco", "guanti"],
             "priority_level": "medium",
-            "custom_fields": {},
             "tags": ["test"]
         }
         default_data.update(overrides)
@@ -261,7 +260,7 @@ class TestDataFactory:
         default_result = {
             "analysis_id": "test_analysis_123",
             "permit_id": 1,
-            "confidence_score": 0.8,
+
             "processing_time": 2.5,
             "analysis_complete": True,
             "executive_summary": {

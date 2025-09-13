@@ -25,9 +25,12 @@ services:
       - redis
       - minio
       - weaviate
+      - transformers
     volumes:
       - ./logs:/app/logs
       - ./backend/app:/app/app
+    networks:
+      - hse-network
     restart: unless-stopped
 
   # === DATABASE ===
@@ -41,6 +44,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hse-network
     restart: unless-stopped
 
   # === VECTOR DATABASE ===
@@ -55,18 +60,27 @@ services:
       - ENABLE_MODULES=text2vec-transformers
       - TRANSFORMERS_INFERENCE_API=http://transformers:8080
       - CLUSTER_HOSTNAME=node1
+      # Multitenant configuration
+      - MULTI_TENANCY_ENABLED=true
+      - TENANT_ACTIVITY_TIMEOUT=60m
+      - LOG_LEVEL=info
+      # Timeout configuration to prevent transformer service timeouts
+      - TEXT2VEC_TRANSFORMERS_TIMEOUT=120s
+      - VECTORIZER_TEXT2VEC_TRANSFORMERS_TIMEOUT=120s
     ports:
       - "8080:8080"
     volumes:
       - weaviate_data:/var/lib/weaviate
-    depends_on:
-      - transformers
+    networks:
+      - hse-network
     restart: unless-stopped
 
   transformers:
     image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
     environment:
       - ENABLE_CUDA=0
+    networks:
+      - hse-network
     restart: unless-stopped
 
   # === STORAGE ===
@@ -81,6 +95,8 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - hse-network
     restart: unless-stopped
 
   # === CACHING ===
@@ -91,6 +107,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - hse-network
     restart: unless-stopped
 
 volumes:
@@ -98,3 +116,8 @@ volumes:
   weaviate_data:
   minio_data:
   redis_data:
+
+networks:
+  hse-network:
+    driver: bridge
+    name: hse-agent_hse-network

@@ -17,16 +17,12 @@ export default function NewWorkPermitPage() {
     description: '',
     work_type: 'manutenzione',
     location: '',
-    risk_level: 'low',
+    risk_level: 'medium',
+    priority_level: 'medium',
     start_date: '',
     end_date: '',
-    contractor_name: '',
-    contractor_company: '',
-    safety_requirements: '',
-    equipment_required: '',
-    hazards_identified: '',
-    control_measures: '',
-    risk_mitigation_actions: '',  // New field
+    dpi_required: [] as string[],
+    risk_mitigation_actions: [] as string[],
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -37,13 +33,21 @@ export default function NewWorkPermitPage() {
     }));
   };
 
+  const handleArrayChange = (name: string, value: string) => {
+    const arrayValue = value.split('\n').filter(item => item.trim() !== '');
+    setFormData(prev => ({
+      ...prev,
+      [name]: arrayValue
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
     try {
-      const response = await apiCall('/api/v1/permits/', {
+      const response = await apiCall('/work-permits', {
         method: 'POST',
         body: JSON.stringify(formData),
       });
@@ -71,7 +75,7 @@ export default function NewWorkPermitPage() {
     }
 
     try {
-      const response = await apiCall('/api/v1/permits/analyze-preview', {
+      const response = await apiCall('/work-permits/analyze-preview', {
         method: 'POST',
         body: JSON.stringify({
           ...formData,
@@ -162,7 +166,7 @@ export default function NewWorkPermitPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label htmlFor="work_type" className="block text-sm font-medium text-gray-700 mb-1">
                     Work Type *
@@ -201,6 +205,26 @@ export default function NewWorkPermitPage() {
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="priority_level" className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority Level *
+                  </label>
+                  <select
+                    id="priority_level"
+                    name="priority_level"
+                    value={formData.priority_level}
+                    onChange={handleChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
                   </select>
                 </div>
               </div>
@@ -259,124 +283,44 @@ export default function NewWorkPermitPage() {
               </div>
             </div>
 
-            {/* Contractor Information */}
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-4">Contractor Information</h2>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="contractor_name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Contractor Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="contractor_name"
-                    name="contractor_name"
-                    value={formData.contractor_name}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Full name"
-                  />
-                </div>
 
-                <div>
-                  <label htmlFor="contractor_company" className="block text-sm font-medium text-gray-700 mb-1">
-                    Company *
-                  </label>
-                  <input
-                    type="text"
-                    id="contractor_company"
-                    name="contractor_company"
-                    value={formData.contractor_company}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Company name"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Safety Information */}
+            {/* Safety Requirements */}
             <div className="mb-6">
               <h2 className="text-lg font-semibold mb-4">Safety Requirements</h2>
               
               <div className="mb-4">
-                <label htmlFor="safety_requirements" className="block text-sm font-medium text-gray-700 mb-1">
-                  Safety Requirements
+                <label htmlFor="dpi_required" className="block text-sm font-medium text-gray-700 mb-1">
+                  DPI Required (Personal Protective Equipment)
                 </label>
                 <textarea
-                  id="safety_requirements"
-                  name="safety_requirements"
-                  value={formData.safety_requirements}
-                  onChange={handleChange}
-                  rows={3}
+                  id="dpi_required"
+                  name="dpi_required"
+                  value={formData.dpi_required.join('\n')}
+                  onChange={(e) => handleArrayChange('dpi_required', e.target.value)}
+                  rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="List safety requirements (PPE, training, etc.)"
+                  placeholder="Enter each DPI item on a new line:&#10;Guanti isolanti Classe 2&#10;Elmetto dielettrico&#10;Calzature isolanti&#10;Tuta ignifuga"
                 />
-              </div>
-
-              <div className="mb-4">
-                <label htmlFor="equipment_required" className="block text-sm font-medium text-gray-700 mb-1">
-                  Equipment Required
-                </label>
-                <textarea
-                  id="equipment_required"
-                  name="equipment_required"
-                  value={formData.equipment_required}
-                  onChange={handleChange}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="List required equipment and tools"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label htmlFor="hazards_identified" className="block text-sm font-medium text-gray-700 mb-1">
-                  Hazards Identified
-                </label>
-                <textarea
-                  id="hazards_identified"
-                  name="hazards_identified"
-                  value={formData.hazards_identified}
-                  onChange={handleChange}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="List potential hazards"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label htmlFor="control_measures" className="block text-sm font-medium text-gray-700 mb-1">
-                  Control Measures
-                </label>
-                <textarea
-                  id="control_measures"
-                  name="control_measures"
-                  value={formData.control_measures}
-                  onChange={handleChange}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Describe control measures to mitigate risks"
-                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter each DPI item on a new line. Leave empty if not known - AI will suggest appropriate PPE.
+                </p>
               </div>
               
               <div className="mb-4">
                 <label htmlFor="risk_mitigation_actions" className="block text-sm font-medium text-gray-700 mb-1">
-                  Azioni di Mitigazione dei Rischi
+                  Risk Mitigation Actions
                 </label>
                 <textarea
                   id="risk_mitigation_actions"
                   name="risk_mitigation_actions"
-                  value={formData.risk_mitigation_actions}
-                  onChange={handleChange}
-                  rows={4}
+                  value={formData.risk_mitigation_actions.join('\n')}
+                  onChange={(e) => handleArrayChange('risk_mitigation_actions', e.target.value)}
+                  rows={5}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Descrivere le azioni specifiche per mitigare i rischi identificati (es. formazione specifica, supervisione aggiuntiva, controlli periodici, etc.)"
+                  placeholder="Enter each mitigation action on a new line:&#10;Procedura LOTO (Lock Out Tag Out)&#10;Verifica assenza tensione&#10;Coordinamento con sala controllo&#10;Isolamento area di lavoro&#10;Supervisione tecnica specializzata"
                 />
                 <p className="mt-1 text-sm text-gray-500">
-                  Le azioni di mitigazione verranno analizzate dagli agenti AI per verificare la conformità del permesso
+                  Enter each mitigation action on a new line. These will be analyzed by AI agents to verify permit compliance.
                 </p>
               </div>
             </div>

@@ -19,7 +19,10 @@ from app.core.audit import AuditService, get_client_ip, get_user_agent
 from app.core.permissions import require_permission
 
 
-router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
+router = APIRouter(
+    prefix="/api/v1/auth", 
+    tags=["Authentication"],
+)
 security = HTTPBearer()
 
 

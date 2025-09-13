@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Security
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
-    jwt_expiration_hours: int = 24
+    jwt_expiration_hours: int = 720  # 30 days
     
     # AI Provider Configuration
     ai_provider: str = "gemini"  # "openai" or "gemini"
@@ -48,10 +48,7 @@ class Settings(BaseSettings):
     
     # CORS
     cors_origins: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001"
+        "http://localhost:3006"
     ]
     
     # Rate Limiting

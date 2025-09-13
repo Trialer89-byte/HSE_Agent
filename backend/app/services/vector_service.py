@@ -47,10 +47,11 @@ class VectorService:
                 print(f"[VectorService] Batch error: {result['result']['errors']}")
     
     def _try_anonymous_connection(self):
-        """Try anonymous connection"""
+        """Try anonymous connection with increased timeout"""
         return weaviate.Client(
             url=settings.weaviate_url,
-            additional_headers={}
+            additional_headers={},
+            timeout_config=(5, 120)  # (connect_timeout, read_timeout) in seconds
         )
     
     def _try_api_key_connection(self):
@@ -61,19 +62,24 @@ class VectorService:
         auth_config = weaviate.AuthApiKey(api_key=settings.weaviate_api_key)
         return weaviate.Client(
             url=settings.weaviate_url,
-            auth_client_secret=auth_config
+            auth_client_secret=auth_config,
+            timeout_config=(5, 120)  # (connect_timeout, read_timeout) in seconds
         )
     
     def _try_startup_period_connection(self):
-        """Try connection with startup period"""
+        """Try connection with startup period and timeout"""
         return weaviate.Client(
             url=settings.weaviate_url,
-            startup_period=10
+            startup_period=10,
+            timeout_config=(5, 120)  # (connect_timeout, read_timeout) in seconds
         )
     
     def _try_basic_connection(self):
-        """Try basic connection without any authentication"""
-        return weaviate.Client(url=settings.weaviate_url)
+        """Try basic connection without any authentication but with timeout"""
+        return weaviate.Client(
+            url=settings.weaviate_url,
+            timeout_config=(5, 120)  # (connect_timeout, read_timeout) in seconds
+        )
     
     def _test_connection(self, client):
         """Test if the client connection works"""
@@ -198,13 +204,15 @@ class VectorService:
         chunk_ids = []
         
         try:
-            # Configure batch with optimal settings
-            batch_size = 50  # Reduced from 100 to avoid timeout errors
+            # Configure batch with optimal settings for timeout resilience
+            batch_size = 25  # Further reduced to minimize timeout risk
             self.client.batch.configure(
                 batch_size=batch_size,
                 dynamic=True,  # Dynamic batching for better performance
-                timeout_retries=3,
-                callback=self._batch_callback
+                timeout_retries=5,  # Increased retries for timeout resilience
+                callback=self._batch_callback,
+                connection_error_retries=3,  # Handle connection errors
+                # weaviate_error_retries=3  # Handle Weaviate-specific errors (available in newer versions)
             )
             
             # Prepare all objects for batch insertion
@@ -365,28 +373,30 @@ class VectorService:
             # Process results
             documents = []
             if "data" in result and "Get" in result["data"] and "HSEDocument" in result["data"]["Get"]:
-                for item in result["data"]["Get"]["HSEDocument"]:
-                    # Filter by threshold
-                    score = item["_additional"]["score"]
-                    # Convert score to float if it's a string
-                    if isinstance(score, str):
-                        try:
-                            score = float(score)
-                        except (ValueError, TypeError):
-                            score = 0.0
-                    if score >= threshold:
-                        documents.append({
-                            "document_code": item["document_code"],
-                            "title": item["title"],
-                            "content": item["content_chunk"],
-                            "document_type": item["document_type"],
-                            "category": item["category"],
-                            "authority": item["authority"],
-                            "section_title": item["section_title"],
-                            "chunk_index": item["chunk_index"],
-                            "relevance_score": item["relevance_score"],
-                            "search_score": score
-                        })
+                hse_documents = result["data"]["Get"]["HSEDocument"]
+                if hse_documents is not None:  # Fix: Check for None before iterating
+                    for item in hse_documents:
+                        # Filter by threshold
+                        score = item["_additional"]["score"]
+                        # Convert score to float if it's a string
+                        if isinstance(score, str):
+                            try:
+                                score = float(score)
+                            except (ValueError, TypeError):
+                                score = 0.0
+                        if score >= threshold:
+                            documents.append({
+                                "document_code": item["document_code"],
+                                "title": item["title"],
+                                "content": item["content_chunk"],
+                                "document_type": item["document_type"],
+                                "category": item["category"],
+                                "authority": item["authority"],
+                                "section_title": item["section_title"],
+                                "chunk_index": item["chunk_index"],
+                                "relevance_score": item["relevance_score"],
+                                "search_score": score
+                            })
             
             return documents
             
@@ -476,6 +486,119 @@ class VectorService:
             
         except Exception as e:
             print(f"Error in semantic search: {e}")
+            return []
+
+    async def semantic_search_by_document_code(
+        self,
+        document_codes: List[str],
+        query: str,
+        tenant_id: int,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Ricerca semantica specifica per documenti PostgreSQL identificati.
+        Cerca nella parte vettoriale di Weaviate per documenti specifici.
+        
+        Args:
+            document_codes: Lista di codici documento da PostgreSQL
+            query: Query semantica (es. "rischi elettrici in spazi confinati") 
+            tenant_id: ID tenant per isolamento
+            limit: Numero massimo risultati per documento
+            
+        Returns:
+            Lista di chunks semanticamente rilevanti dai documenti specificati
+        """
+        if not self.client:
+            print("[VectorService] No client available for document-specific semantic search")
+            return []
+            
+        if not document_codes:
+            return []
+            
+        try:
+            # Filtra per documenti specifici + tenant
+            doc_conditions = []
+            for doc_code in document_codes:
+                doc_conditions.append({
+                    "path": ["document_code"],
+                    "operator": "Equal", 
+                    "valueText": doc_code
+                })
+            
+            # Combina filtro documenti con tenant
+            where_filter = {
+                "operator": "And",
+                "operands": [
+                    {
+                        "path": ["tenant_id"],
+                        "operator": "Equal",
+                        "valueInt": tenant_id
+                    },
+                    {
+                        "operator": "Or",
+                        "operands": doc_conditions
+                    }
+                ]
+            }
+            
+            print(f"[VectorService] Semantic search in {len(document_codes)} specific documents")
+            print(f"[VectorService] Documents: {document_codes}")
+            
+            result = (
+                self.client.query
+                .get("HSEDocument", [
+                    "document_code",
+                    "title", 
+                    "content_chunk",
+                    "document_type",
+                    "category",
+                    "section_title",
+                    "chunk_index",
+                    "relevance_score"
+                ])
+                .with_near_text({
+                    "concepts": [query],
+                    "distance": 0.7  # Soglia semantica più permissiva
+                })
+                .with_where(where_filter)
+                .with_limit(limit * len(document_codes))  # Più risultati per documento
+                .with_additional(["score", "distance"])
+                .do()
+            )
+            
+            if 'errors' in result:
+                print(f"[VectorService] Semantic search errors: {result['errors']}")
+                return []
+                
+            documents = result.get('data', {}).get('Get', {}).get('HSEDocument', [])
+            
+            # Struttura risultati con info semantica
+            semantic_results = []
+            for doc in documents:
+                additional = doc.get('_additional', {})
+                semantic_result = {
+                    "document_code": doc.get('document_code'),
+                    "title": doc.get('title'),
+                    "content": doc.get('content_chunk', ''),
+                    "document_type": doc.get('document_type'),
+                    "category": doc.get('category'),
+                    "section_title": doc.get('section_title'),
+                    "chunk_index": doc.get('chunk_index', 0),
+                    "semantic_score": additional.get('score', 0.0),
+                    "semantic_distance": additional.get('distance', 1.0),
+                    "source": "Weaviate_Semantic",
+                    "search_query": query
+                }
+                semantic_results.append(semantic_result)
+            
+            # Ordina per relevanza semantica
+            semantic_results.sort(key=lambda x: x.get('semantic_distance', 1.0))
+            
+            print(f"[VectorService] Found {len(semantic_results)} semantic results from specific documents")
+            return semantic_results
+            
+        except Exception as e:
+            print(f"[VectorService] Error in document-specific semantic search: {e}")
             return []
     
     async def delete_document_chunks(self, document_code: str, tenant_id: int) -> bool:

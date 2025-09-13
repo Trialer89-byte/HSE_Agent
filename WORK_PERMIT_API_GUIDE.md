@@ -153,9 +153,42 @@ Same as CREATE but all fields are optional. Only provided fields will be updated
 ```
 
 ### Orchestrator Options
-- **`"autogen"`**: Full multi-agent AI analysis (slower, comprehensive)
-- **`"fast"`**: Quick single-call analysis (faster, basic)
-- **`"mock"`**: Mock analysis for testing (instant)
+- **`"advanced"`**: Enhanced multi-specialist AI analysis (most comprehensive, 60-90s)
+- **`"autogen"`**: Full multi-agent AI analysis (comprehensive, 30-60s)  
+- **`"fast"`**: Quick single-call analysis (basic, 10-30s)
+- **`"mock"`**: Mock analysis for testing (instant, no API calls)
+
+---
+
+## AI ANALYSIS Preview (without saving)
+**POST** `/api/v1/permits/analyze-preview`
+
+Use this endpoint to analyze permit data without creating/saving a permit first.
+
+### Available Orchestrators (Preview only)
+- **`"modular"`**: AutoGen with modular specialist agents (45-75s)
+- **`"autogen"`**: Standard multi-agent analysis (30-60s)  
+- **`"mock"`**: Instant mock results (default, <1s)
+
+⚠️ **Note**: `"advanced"` and `"fast"` are NOT available in preview mode.
+
+### Request Body
+```json
+{
+  "title": "Manutenzione Serbatoio A1",
+  "description": "Pulizia interna e ispezione del serbatoio A1 per manutenzione ordinaria",
+  "work_type": "manutenzione",
+  "location": "Area Stoccaggio - Serbatoio A1",
+  "duration_hours": 4,
+  "workers_count": 2,
+  "equipment": ["metal repair tools", "cutting equipment", "portable grinder"],
+  "orchestrator": "modular",
+  "force_reanalysis": false
+}
+```
+
+### Response
+Same structure as regular analysis but without persisting the permit.
 
 ---
 
@@ -259,7 +292,25 @@ curl -X POST "http://localhost:8000/api/v1/permits/" \
   }'
 ```
 
-### 3. List Work Permits  
+### 3. Analyze Permit Preview (without saving)
+```bash
+curl -X POST "http://localhost:8000/api/v1/permits/analyze-preview" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "X-Tenant-Domain: demo.hse-system.com" \
+  -d '{
+    "title": "Test Welding Work",
+    "description": "Welding repair of metal pipeline with hot work procedures",
+    "work_type": "manutenzione",
+    "location": "Production Area B",
+    "duration_hours": 6,
+    "workers_count": 2,
+    "equipment": ["welding equipment", "gas cylinders", "protective gear"],
+    "orchestrator": "modular"
+  }'
+```
+
+### 4. List Work Permits  
 ```bash
 curl -X GET "http://localhost:8000/api/v1/permits/" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
