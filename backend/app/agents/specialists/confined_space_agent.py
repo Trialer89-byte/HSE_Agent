@@ -160,7 +160,7 @@ Fornisci analisi strutturata in JSON con:
 - required_procedures: procedure obbligatorie DPR 177/2011
 - safety_equipment: attrezzature di sicurezza necessarie
 - required_dpi: DPI specifici per spazi confinati
-- recommendations: array raccomandazioni prioritarie
+- recommendations: array raccomandazioni prioritarie (max 8, evita duplicazioni)
 """
 
         # Get AI analysis

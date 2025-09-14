@@ -134,7 +134,6 @@ export default function WorkPermitDetailPage() {
         work_type: formData.get('work_type')?.toString(),
         location: formData.get('location')?.toString(),
         risk_level: formData.get('risk_level')?.toString(),
-        priority_level: formData.get('priority_level')?.toString(),
         start_date: formData.get('start_date') ? new Date(formData.get('start_date') as string).toISOString() : null,
         end_date: formData.get('end_date') ? new Date(formData.get('end_date') as string).toISOString() : null,
         status: formData.get('status')?.toString(),
@@ -743,20 +742,6 @@ export default function WorkPermitDetailPage() {
                     </select>
                   </div>
 
-                  {/* Priority Level */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
-                    <select
-                      name="priority_level"
-                      defaultValue={permit?.priority_level}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="critical">Critical</option>
-                    </select>
-                  </div>
 
                   {/* Workers Count */}
                   <div>

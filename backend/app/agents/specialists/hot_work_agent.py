@@ -147,7 +147,7 @@ Fornisci risposta strutturata in JSON con:
 - specific_risks: array di oggetti con type, description, severity
 - missing_controls: array controlli di sicurezza mancanti
 - fire_prevention_measures: array misure prevenzione incendi
-- recommendations: array raccomandazioni prioritarie
+- recommendations: array raccomandazioni prioritarie (max 8, evita duplicazioni)
         """
 
         # Get AI analysis

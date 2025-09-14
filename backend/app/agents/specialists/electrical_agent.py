@@ -147,11 +147,12 @@ ANALIZZA COMPLETAMENTE I RISCHI ELETTRICI secondo CEI 11-27, CEI EN 50110 e D.Lg
    - Distanze di sicurezza secondo CEI 11-27
 
 3. CONTROLLO GAP E RACCOMANDAZIONI INTELLIGENTI:
-   IMPORTANTE - Verifica se mancano le seguenti procedure essenziali:
-   
+   IMPORTANTE - Analizza se mancano procedure essenziali, ma evita duplicazioni:
+
    a) PROCEDURA LOTO (Lock-Out Tag-Out):
       - Se il lavoro coinvolge impianti elettrici E non è presente alcuna menzione di LOTO, sezionamento, blocco o cartellatura
-      - Raccomanda: "Implementare procedura LOTO (Lock-Out Tag-Out) per sezionamento e blocco impianti elettrici"
+      - E se non sono presenti altre raccomandazioni generiche di isolamento energetico
+      - Raccomanda procedure LOTO specifiche per il dominio elettrico: "Implementare procedura LOTO elettrica specifica: sezionamento, verifica assenza tensione, blocco e cartellatura impianti"
       
    b) VERIFICA ASSENZA TENSIONE:
       - Se non è presente verifica tensione o controllo elettrico
@@ -164,10 +165,12 @@ ANALIZZA COMPLETAMENTE I RISCHI ELETTRICI secondo CEI 11-27, CEI EN 50110 e D.Lg
    d) COORDINAMENTO DPI:
       - Verifica che il DPI Specialist riceva informazioni sul livello di tensione
       - Non raccomandare DPI direttamente (competenza del DPI Specialist)
-      
+
    e) MESSA A TERRA:
       - Se per tensioni MT/AT non è presente messa a terra di lavoro
       - Raccomanda: "Installare messa a terra temporanea di lavoro"
+
+   IMPORTANTE: Prima di aggiungere gap_analysis, verifica che non sia già coperta dalle tue raccomandazioni principali.
 
 4. PROCEDURE DA DOCUMENTI AZIENDALI:
    - Se nei documenti sono presenti procedure specifiche LOTO o elettriche
@@ -196,6 +199,9 @@ IMPORTANTE: Fornisci risposta ESCLUSIVAMENTE in formato JSON valido, senza testo
 
 REGOLE FORMATO:
 - Tutti i campi sono OBBLIGATORI
+- EVITA DUPLICAZIONI: Non ripetere la stessa raccomandazione in campi diversi
+- Se LOTO è presente nei documenti, non aggiungerlo in safety_procedures o gap_analysis
+- Consolida internamente tutte le raccomandazioni simili in una sola voce per campo
 - I campi con "lista" devono essere array, anche se vuoti
 - electrical_context_for_dpi deve essere oggetto vuoto o con dati
 - voltage_level deve essere esattamente: BT, MT, AT, unknown, o none
@@ -343,16 +349,20 @@ REGOLE FORMATO:
                 })
                 action_id += 1
         
-        # Add gap analysis findings
+        # Add gap analysis findings (only if not already covered by other recommendations)
+        existing_actions_text = " ".join([rec.get("action", "").lower() for rec in recommendations])
         for gap in gap_analysis:
             if isinstance(gap, str) and gap.strip():
-                recommendations.append({
-                    "id": action_id,
-                    "action": f"Colmare lacuna identificata: {gap}",
-                    "criticality": "media",
-                    "type": "electrical_gap_analysis"
-                })
-                action_id += 1
+                gap_lower = gap.lower()
+                # Skip if similar action already exists
+                if not any(keyword in existing_actions_text for keyword in ["loto", "lockout", "isolamento", "sezionamento"] if keyword in gap_lower):
+                    recommendations.append({
+                        "id": action_id,
+                        "action": f"Colmare lacuna identificata: {gap}",
+                        "criticality": "media",
+                        "type": "electrical_gap_analysis"
+                    })
+                    action_id += 1
         
         # No hardcoded fallback - if AI provides no recommendations, return empty list
         # This ensures all recommendations come from AI analysis

@@ -442,8 +442,7 @@ async def analyze_permit_preview(
                     "user_role": current_user.role,
                     "department": getattr(current_user, 'department', 'safety')
                 },
-                vector_service=VectorService(),
-                db_session=db
+                vector_service=VectorService()
             )
             logger.info("Using Advanced orchestrator with 3-step specialist process")
         else:
@@ -800,8 +799,7 @@ async def analyze_permit_comprehensive(
             print(f"[PermitRouter] Using Advanced Orchestrator for analysis - permit {permit_id}")
             orchestrator = AdvancedHSEOrchestrator(
                 user_context=user_context,
-                vector_service=vector_service,
-                db_session=db
+                vector_service=vector_service
             )
             analysis_result = await orchestrator.analyze_permit_advanced(
                 permit_data=permit.to_dict(),

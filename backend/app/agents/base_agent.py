@@ -16,7 +16,6 @@ class BaseHSEAgent(ABC):
         self.activation_keywords = activation_keywords or []
         self.system_message = self._get_system_message()
         self.vector_service = None  # Will be injected by orchestrator
-        self.db_session = None     # Could be injected for PostgreSQL access
         
     @abstractmethod
     def _get_system_message(self) -> str:
@@ -151,56 +150,6 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
             print(f"[{self.name}] WARNING: Weaviate search failed - {str(e)} - proceeding without documents")
             return []  # Return empty list instead of crashing
     
-    async def search_metadata_documents(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Search document metadata in PostgreSQL"""
-        if not self.db_session:
-            print(f"[{self.name}] No database session available for metadata search")
-            return []
-        
-        try:
-            from app.models.document import Document
-            from sqlalchemy import and_, or_
-            
-            # Build query based on filters
-            query = self.db_session.query(Document)
-            
-            conditions = []
-            if filters.get("tenant_id"):
-                conditions.append(Document.tenant_id == filters["tenant_id"])
-            if filters.get("document_type"):
-                conditions.append(Document.document_type.in_(filters["document_type"]))
-            if filters.get("category"):
-                conditions.append(Document.category == filters["category"])
-            if filters.get("is_active", True):
-                conditions.append(Document.is_active == True)
-            
-            if conditions:
-                query = query.filter(and_(*conditions))
-            
-            # Execute query
-            documents = query.limit(10).all()
-            
-            # Convert to dict format
-            result = []
-            for doc in documents:
-                result.append({
-                    "id": doc.id,
-                    "document_code": doc.document_code,
-                    "title": doc.title,
-                    "document_type": doc.document_type,
-                    "category": doc.category,
-                    "file_path": doc.file_path,
-                    "content_summary": doc.content_summary,
-                    "industry_sectors": doc.industry_sectors,
-                    "authority": doc.authority
-                })
-            
-            print(f"[{self.name}] PostgreSQL search found {len(result)} metadata records")
-            return result
-            
-        except Exception as e:
-            print(f"[{self.name}] Error in PostgreSQL metadata search: {e}")
-            return []
 
     def extract_citations_from_response(self, ai_response: str, context_documents: list = None) -> list:
         """Extract citations from AI response and create structured citation data"""
@@ -226,14 +175,14 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
                     matched_doc = doc
                     break
 
-            # Determine data source - documents from semantic_search have certainty, others don't
-            data_source = "WEAVIATE" if matched_doc and matched_doc.get('certainty') is not None else "POSTGRESQL"
+            # All documents now come from Weaviate only
+            data_source = "WEAVIATE"
 
             citation = {
                 "id": f"CIT_{i+1:03d}",
                 "cited_document": cited_doc_name,
                 "source": "AI_Analysis",
-                "data_source": data_source,  # Track if from Weaviate or PostgreSQL
+                "data_source": data_source,  # Always WEAVIATE for agents
                 "document_info": {
                     "title": matched_doc.get('title', cited_doc_name) if matched_doc else cited_doc_name,
                     "document_type": matched_doc.get('document_type', 'referenced') if matched_doc else 'referenced',
@@ -253,14 +202,14 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
         if not citations and context_documents:
             print(f"[{self.name}] No formal citations found, using context documents as implicit citations")
             for i, doc in enumerate(context_documents[:3]):  # Max 3 implicit citations
-                # Determine data source for implicit citations
-                data_source = "WEAVIATE" if doc.get('certainty') is not None else "POSTGRESQL"
+                # All context documents are from Weaviate
+                data_source = "WEAVIATE"
 
                 citations.append({
                     "id": f"IMP_{i+1:03d}",
                     "cited_document": doc.get('title', 'Documento aziendale'),
                     "source": "Context_Document",
-                    "data_source": data_source,  # Track data source for implicit citations
+                    "data_source": data_source,  # Always WEAVIATE for agents
                     "document_info": {
                         "title": doc.get('title', 'N/A'),
                         "document_type": doc.get('document_type', 'unknown'),
@@ -278,21 +227,18 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
         return citations
 
     def validate_weaviate_usage(self, citations: list) -> dict:
-        """Validate that specialist used Weaviate documents before suggesting actions"""
-        weaviate_citations = [c for c in citations if c.get('data_source') == 'WEAVIATE']
-        postgresql_citations = [c for c in citations if c.get('data_source') == 'POSTGRESQL']
-
+        """Validate that specialist has citations (all from Weaviate)"""
+        # All citations are now from Weaviate, so just validate we have citations
         validation_result = {
-            "weaviate_used": len(weaviate_citations) > 0,
-            "weaviate_count": len(weaviate_citations),
-            "postgresql_count": len(postgresql_citations),
+            "weaviate_used": len(citations) > 0,
+            "weaviate_count": len(citations),
             "total_citations": len(citations),
-            "compliance": "COMPLIANT" if len(weaviate_citations) > 0 else "NON_COMPLIANT",
+            "compliance": "COMPLIANT" if len(citations) > 0 else "NON_COMPLIANT",
             "warning": None
         }
 
-        if len(weaviate_citations) == 0:
-            validation_result["warning"] = "MANDATORY: Specialist must use Weaviate documents before suggesting actions"
-            validation_result["recommendation"] = "Ensure semantic search is called and Weaviate documents are retrieved"
+        if len(citations) == 0:
+            validation_result["warning"] = "MANDATORY: Specialist must retrieve and use Weaviate documents"
+            validation_result["recommendation"] = "Ensure semantic search is called and documents are retrieved"
 
         return validation_result

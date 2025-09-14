@@ -9,7 +9,6 @@ class WorkPermitBase(BaseModel):
     dpi_required: List[str] = Field(default=[], description="DPI richiesti", example=["Guanti isolanti Classe 2", "Elmetto dielettrico", "Calzature isolanti"])
     work_type: Optional[str] = Field(None, description="Tipo di lavoro", example="elettrico")
     location: Optional[str] = Field(None, description="Ubicazione del lavoro", example="Cabina elettrica MT - Stabilimento A")
-    priority_level: str = Field(default="medium", description="Livello di priorità", example="high")
     risk_level: str = Field(default="medium", description="Livello di rischio", example="high")
     start_date: Optional[datetime] = Field(None, description="Data di inizio lavoro")
     end_date: Optional[datetime] = Field(None, description="Data di fine lavoro")
@@ -27,13 +26,6 @@ class WorkPermitBase(BaseModel):
             return v
         else:
             return []
-
-    @validator('priority_level')
-    def validate_priority(cls, v):
-        allowed_priorities = ['low', 'medium', 'high', 'critical']
-        if v not in allowed_priorities:
-            raise ValueError(f'Priority must be one of: {allowed_priorities}')
-        return v
 
     @validator('risk_level')
     def validate_risk_level(cls, v):
@@ -61,7 +53,6 @@ class WorkPermitUpdate(BaseModel):
     dpi_required: Optional[List[str]] = None
     work_type: Optional[str] = None
     location: Optional[str] = None
-    priority_level: Optional[str] = None
     risk_level: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None

@@ -8,7 +8,6 @@ from typing import Dict, Any, List, Optional
 import time
 import json
 from datetime import datetime
-from sqlalchemy.orm import Session
 
 from .specialists import get_all_specialists
 from .cross_validation import CrossValidationAgent
@@ -24,14 +23,12 @@ class AdvancedHSEOrchestrator:
     """
     
     def __init__(
-        self, 
-        user_context: Dict[str, Any] = None, 
-        vector_service=None,
-        db_session: Session = None
+        self,
+        user_context: Dict[str, Any] = None,
+        vector_service=None
     ):
         self.user_context = user_context or {}
         self.vector_service = vector_service
-        self.db_session = db_session
         self.specialists = get_all_specialists()
         print(f"[AdvancedOrchestrator] Available specialists: {list(self.specialists.keys())}")
         
@@ -42,14 +39,11 @@ class AdvancedHSEOrchestrator:
         
         self.cross_validator = CrossValidationAgent()
         
-        # Inject services into all specialists
-        if vector_service or db_session:
+        # Inject vector service into all specialists
+        if vector_service:
             for specialist in self.specialists.values():
-                if vector_service:
-                    specialist.vector_service = vector_service
-                if db_session:
-                    specialist.db_session = db_session
-            print(f"[AdvancedOrchestrator] Injected services into {len(self.specialists)} specialists")
+                specialist.vector_service = vector_service
+            print(f"[AdvancedOrchestrator] Injected vector service into {len(self.specialists)} specialists")
         
         print(f"[AdvancedOrchestrator] Initialized with enhanced 5-step process")
     
@@ -1271,11 +1265,10 @@ class AdvancedHSEOrchestrator:
         }
         
         # Count sources for logging
-        pg_count = sum(1 for docs in [normative_citations, internal_citations] for doc in docs if doc["document_info"]["source"] == "PostgreSQL")
         weaviate_count = sum(1 for docs in [normative_citations, internal_citations] for doc in docs if doc["document_info"]["source"] == "Weaviate")
-        
+
         print(f"[AdvancedOrchestrator] Generated citations: {len(result['normative'])} normative, {len(result['internal'])} internal, {len(result['metadata'])} metadata")
-        print(f"[AdvancedOrchestrator] Source distribution: {pg_count} PostgreSQL, {weaviate_count} Weaviate")
+        print(f"[AdvancedOrchestrator] Source distribution: {weaviate_count} Weaviate documents")
         return result
     
     

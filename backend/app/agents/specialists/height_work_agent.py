@@ -143,10 +143,10 @@ Fornisci risposta strutturata in JSON con:
 - risk_level: "basso|medio|alto|critico"
 - specific_risks: array di oggetti con type, description, severity
 - existing_dpi_adequacy: "adeguata|inadeguata|parziale"
-- existing_actions_adequacy: "adeguate|inadeguate|parziali"  
+- existing_actions_adequacy: "adeguate|inadeguate|parziali"
 - missing_dpi: array di DPI mancanti con standard EN
 - missing_controls: array di procedure/controlli mancanti
-- recommendations: array di raccomandazioni prioritarie
+- recommendations: array di raccomandazioni prioritarie (max 8, non duplicate)
         """
         
         # Get AI analysis

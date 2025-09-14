@@ -160,16 +160,21 @@ ANALIZZA COMPLETAMENTE I RISCHI MECCANICI:
 
 4. VALUTAZIONE MISURE ESISTENTI:
    - Adeguatezza DPI attuali per rischi meccanici identificati
-   - Completezza procedure di isolamento energia
-   - Necessità procedura LOTO (Lock-Out Tag-Out)
+   - Completezza procedure di isolamento energia meccanica (non elettrica)
+   - Necessità procedure LOTO specifiche per sistemi meccanici/idraulici/pneumatici
    - Conformità alle normative D.Lgs 81/08
+
+   IMPORTANTE: Concentrati SOLO su sistemi meccanici. Per lavori elettrici, lascia le procedure LOTO elettriche allo specialist elettrico.
 
 5. RACCOMANDAZIONI SPECIFICHE:
    - DPI mancanti con normative EN specifiche
-   - Controlli tecnici di sicurezza
-   - Procedure operative sicure
-   - Formazione/addestramento necessari
-   - Attrezzature ausiliarie richieste
+   - Controlli tecnici di sicurezza per sistemi meccanici
+   - Procedure operative sicure per macchinari/attrezzature
+   - Formazione/addestramento per uso attrezzature meccaniche
+   - Attrezzature ausiliarie per sicurezza meccanica
+
+   REGOLA ANTI-DUPLICAZIONE: Se il work_type è "elettrico" o la descrizione contiene "elettrico/elettrica",
+   NON raccomandare procedure LOTO generiche. Concentrati solo su aspetti meccanici complementari.
 
 Fornisci risposta strutturata in JSON con:
 - mechanical_risks: array di rischi identificati con severity (bassa/media/alta/critica)
@@ -181,6 +186,8 @@ Fornisci risposta strutturata in JSON con:
 - loto_required: boolean se necessaria procedura LOTO
 - training_needs: formazione specifica richiesta
 - risk_level: livello rischio complessivo (basso/medio/alto/critico)
+
+IMPORTANTE: Evita raccomandazioni duplicate. Non ripetere la stessa azione in campi diversi.
 
 IMPORTANTE: Il campo 'intelligent_recommendations' deve contenere azioni specifiche e contestuali basate sui documenti aziendali e sui rischi identificati. Non fornire raccomandazioni generiche ma azioni concrete per questo specifico lavoro.
 """
@@ -291,20 +298,30 @@ IMPORTANTE: Il campo 'intelligent_recommendations' deve contenere azioni specifi
         
         # High priority actions
         high_priority_actions = []
+        existing_actions_text = " ".join(critical_actions).lower()
         for measure in ai_suggested_measures[:3]:  # Top 3 AI suggestions
             if measure not in critical_actions:
-                high_priority_actions.append(measure)
+                measure_lower = measure.lower()
+                # Skip if similar action already exists in critical actions
+                if not any(keyword in existing_actions_text and keyword in measure_lower
+                          for keyword in ["loto", "lockout", "isolamento", "sezionamento", "qualificato", "delimitazione"]):
+                    high_priority_actions.append(measure)
         
         # Medium priority actions (improvements to existing measures)
         medium_priority_actions = []
+        all_existing_text = " ".join(critical_actions + high_priority_actions).lower()
+
         if existing_actions:
-            medium_priority_actions.append("Verifica adeguatezza delle misure esistenti")
-            medium_priority_actions.append("Aggiornamento procedure operative specifiche")
+            # Only add if not already covered
+            if "verifica" not in all_existing_text and "adeguatezza" not in all_existing_text:
+                medium_priority_actions.append("Verifica adeguatezza delle misure esistenti")
+            if "aggiornamento" not in all_existing_text and "procedure" not in all_existing_text:
+                medium_priority_actions.append("Aggiornamento procedure operative specifiche")
         else:
-            medium_priority_actions.extend([
-                "Sviluppo di procedure operative standard",
-                "Formazione specifica per operatori"
-            ])
+            if "sviluppo" not in all_existing_text and "procedure" not in all_existing_text:
+                medium_priority_actions.append("Sviluppo di procedure operative standard")
+            if "formazione" not in all_existing_text:
+                medium_priority_actions.append("Formazione specifica per operatori")
         
         # Build prioritized recommendations
         action_id = 1

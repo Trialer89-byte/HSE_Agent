@@ -173,13 +173,28 @@ ANALIZZA COMPLETAMENTE I RISCHI CHIMICI E ATMOSFERE ESPLOSIVE secondo:
    - Equipaggiamenti antistatici per ATEX
    - Strumentazione certificata ATEX
 
+IMPORTANTE: Concentrati SPECIFICAMENTE su questo permesso di lavoro e le sue caratteristiche uniche.
+Non fornire raccomandazioni generiche - ogni azione deve essere pertinente al lavoro descritto.
+
 Fornisci analisi strutturata in JSON con:
-- chemical_substances_identified: sostanze chimiche rilevate
-- atex_risk_assessment: valutazione rischio esplosione
-- health_hazards: rischi per la salute
-- required_controls: controlli di sicurezza necessari
-- monitoring_requirements: monitoraggi richiesti
-- required_dpi: DPI chimici/ATEX specifici
+- chemical_substances_identified: sostanze chimiche SPECIFICHE rilevate in questo lavoro
+- identified_risks: array di oggetti rischi con {{type, description, severity}} SPECIFICI per questo lavoro
+- risk_classification: classificazione complessiva (es. "RISCHIO CHIMICO", "RISCHIO CHIMICO + ATEX")
+- atex_risk_assessment: valutazione rischio esplosione SPECIFICA per questo lavoro
+- health_hazards: rischi per la salute SPECIFICI di questo lavoro
+- required_controls: controlli di sicurezza SPECIFICI necessari per questo lavoro
+- monitoring_requirements: monitoraggi SPECIFICI richiesti per questo tipo di lavoro
+- required_dpi: DPI chimici/ATEX SPECIFICI per le sostanze e rischi identificati
+- required_permits: permessi SPECIFICI necessari per questo lavoro chimico/ATEX
+- training_requirements: formazione SPECIFICA per i rischi chimici di questo lavoro
+- emergency_procedures: procedure emergenza SPECIFICHE per questo lavoro chimico
+- recommendations: raccomandazioni PRIORITARIE specifiche (max 6, evita duplicazioni con altre sezioni)
+- ai_specific_recommendations: osservazioni aggiuntive specifiche dell'AI per questo permesso
+
+EVITA ASSOLUTAMENTE:
+- Raccomandazioni generiche applicabili a qualsiasi lavoro
+- Duplicazioni tra sezioni diverse
+- Riferimenti vaghi - specifica sempre il collegamento al lavoro in corso
 """
         
         # Get AI analysis
@@ -215,70 +230,46 @@ Fornisci analisi strutturata in JSON con:
         health_hazards = ai_analysis.get("health_hazards", [])
         atex_assessment = ai_analysis.get("atex_risk_assessment", "")
         
-        # Add chemical risks
-        for hazard in health_hazards:
-            if hazard and "Nessun" not in hazard and "nessun" not in hazard:
-                severity = "critica" if any(term in hazard.lower() for term in ["critico", "atex", "esplosiv", "cancerogen"]) else "alta"
+        # Process risks directly from AI analysis without hardcoded logic
+        ai_risks = ai_analysis.get("identified_risks", [])
+        for risk in ai_risks:
+            if isinstance(risk, dict):
+                risks_identified.append({
+                    "type": risk.get("type", "chemical_risk"),
+                    "source": self.name,
+                    "description": risk.get("description", str(risk)),
+                    "severity": risk.get("severity", "media")
+                })
+            elif risk:  # String or other format
+                risk_str = str(risk)
                 risks_identified.append({
                     "type": "chemical_hazard",
                     "source": self.name,
-                    "description": hazard,
-                    "severity": severity
+                    "description": risk_str,
+                    "severity": "media"  # Let AI determine severity in its response
                 })
         
-        # Add ATEX risk if detected
-        if "alto" in atex_assessment.lower() or "critico" in atex_assessment.lower():
-            risks_identified.append({
-                "type": "atex_explosion",
-                "source": self.name,
-                "description": f"ATEX - Rischio esplosione: {atex_assessment}",
-                "severity": "critica"
-            })
-        
-        # If no significant risks detected
-        if not risks_identified:
-            risks_identified.append({
-                "type": "no_chemical_risk",
-                "source": self.name,
-                "description": "Nessun rischio chimico significativo identificato",
-                "severity": "bassa"
-            })
+        # If no significant risks detected, don't add hardcoded fallback
+        # Let the AI analysis speak for itself
         
         monitoring = ai_analysis.get("monitoring_requirements", [])
         
-        # Determine if ATEX controls are needed
-        is_atex_risk = any("atex" in str(risk).lower() or "esplosion" in str(risk).lower() for risk in risks_identified)
-        
         return {
             "specialist": self.name,
-            "classification": f"RISCHIO CHIMICO" + (" + ATMOSFERA ESPLOSIVA ATEX" if is_atex_risk else ""),
+            "classification": ai_analysis.get("risk_classification", "RISCHIO CHIMICO"),
             "ai_analysis_used": True,
             "risks_identified": risks_identified,
             "recommended_actions": ai_analysis.get("recommended_actions", ai_analysis.get("recommendations", [])),
-            "existing_measures_evaluation": {
+            "existing_measures_evaluation": ai_analysis.get("existing_measures_evaluation", {
                 "substances_identified": substances,
-                "atex_risk_level": atex_assessment,
                 "health_impact_assessment": health_hazards,
-                "risk_coverage": "comprehensive" if len(risks_identified) > 1 else "basic",
                 "ai_assessment": ai_analysis
-            },
-            "permits_required": ["Permesso Esposizione Chimica"] + (["ATEX Work Permit"] if is_atex_risk else []),
-            "training_requirements": [
-                "Formazione rischio chimico specifico",
-                "Lettura e comprensione SDS",
-                "Uso corretto DPI chimici"
-            ] + (["Formazione ATEX", "Procedure emergenza esplosione"] if is_atex_risk else []),
-            "emergency_measures": [
-                "Piano evacuazione immediata",
-                "Procedure decontaminazione",
-                "Comunicazione centro antiveleni"
-            ] + (["Procedura emergenza esplosione", "Isolamento area 100m"] if is_atex_risk else []),
+            }),
+            "permits_required": ai_analysis.get("required_permits", []),
+            "training_requirements": ai_analysis.get("training_requirements", []),
+            "emergency_measures": ai_analysis.get("emergency_procedures", []),
             "monitoring_requirements": monitoring,
-            "ai_recommendations": [
-                f"Sostanze identificate: {', '.join(substances[:3])}",
-                f"Valutazione ATEX: {atex_assessment}",
-                "Conformità Regolamento CLP e Direttive ATEX"
-            ],
+            "ai_recommendations": ai_analysis.get("ai_specific_recommendations", []),
             "recommendations": ai_analysis.get("recommendations", []),  # Keep for backwards compatibility
             "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"

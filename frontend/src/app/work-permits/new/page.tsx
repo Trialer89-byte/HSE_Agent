@@ -18,7 +18,6 @@ export default function NewWorkPermitPage() {
     work_type: 'manutenzione',
     location: '',
     risk_level: 'medium',
-    priority_level: 'medium',
     start_date: '',
     end_date: '',
     dpi_required: [] as string[],
@@ -47,7 +46,7 @@ export default function NewWorkPermitPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await apiCall('/work-permits', {
+      const response = await apiCall('/api/v1/permits', {
         method: 'POST',
         body: JSON.stringify(formData),
       });
@@ -75,7 +74,7 @@ export default function NewWorkPermitPage() {
     }
 
     try {
-      const response = await apiCall('/work-permits/analyze-preview', {
+      const response = await apiCall('/api/v1/permits/analyze-preview', {
         method: 'POST',
         body: JSON.stringify({
           ...formData,
@@ -166,7 +165,7 @@ export default function NewWorkPermitPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="work_type" className="block text-sm font-medium text-gray-700 mb-1">
                     Work Type *
@@ -198,25 +197,6 @@ export default function NewWorkPermitPage() {
                     id="risk_level"
                     name="risk_level"
                     value={formData.risk_level}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="priority_level" className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority Level *
-                  </label>
-                  <select
-                    id="priority_level"
-                    name="priority_level"
-                    value={formData.priority_level}
                     onChange={handleChange}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
