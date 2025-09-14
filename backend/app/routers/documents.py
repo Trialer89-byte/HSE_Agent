@@ -66,6 +66,46 @@ async def verify_weaviate_status(document: Document) -> Dict[str, Any]:
     return verification_result
 
 
+async def process_document_upload_with_db(
+    task_id: str,
+    file_content: bytes,
+    file_name: str,
+    document_code: Optional[str],
+    title: str,
+    document_type: str,
+    category: Optional[str],
+    tenant_id: int,
+    uploaded_by: int,
+    industry_sectors: List[str],
+    authority: Optional[str],
+    subcategory: Optional[str],
+    scope: Optional[str],
+    force_reload: bool
+):
+    """Wrapper that creates its own database session for background processing"""
+    db_session = next(get_db())
+    try:
+        await process_document_upload(
+            task_id=task_id,
+            file_content=file_content,
+            file_name=file_name,
+            document_code=document_code,
+            title=title,
+            document_type=document_type,
+            category=category,
+            tenant_id=tenant_id,
+            uploaded_by=uploaded_by,
+            industry_sectors=industry_sectors,
+            authority=authority,
+            subcategory=subcategory,
+            scope=scope,
+            force_reload=force_reload,
+            db_session=db_session
+        )
+    finally:
+        db_session.close()
+
+
 async def process_document_upload(
     task_id: str,
     file_content: bytes,
@@ -253,7 +293,7 @@ async def upload_document(
     
     # Add background task
     background_tasks.add_task(
-        process_document_upload,
+        process_document_upload_with_db,
         task_id=task_id,
         file_content=file_content,
         file_name=file_name,
@@ -267,8 +307,7 @@ async def upload_document(
         authority=authority,
         subcategory=subcategory,
         scope=scope,
-        force_reload=force_reload,
-        db_session=db
+        force_reload=force_reload
     )
     
     # Return immediately with task ID

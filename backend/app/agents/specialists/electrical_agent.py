@@ -221,7 +221,10 @@ REGOLE FORMATO:
             if not validation_result["valid"]:
                 print(f"[{self.name}] AI response failed schema validation after auto-fixes: {validation_result['errors']}")
                 return self.create_error_response(f"AI response schema validation failed: {validation_result['errors']}")
-                
+
+            # Extract citations from AI response for document traceability
+            citations = self.extract_citations_from_response(ai_response, all_docs)
+
         except Exception as e:
             print(f"[{self.name}] Analysis failed: {e}")
             # Use standardized error response
@@ -297,6 +300,7 @@ REGOLE FORMATO:
                 f"Qualifiche richieste: {', '.join(qualifications)}",
                 "Conformità CEI 11-27 e CEI EN 50110"
             ],
+            "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }
 

@@ -177,9 +177,12 @@ Fornisci risposta strutturata in JSON con:
 - existing_measures_adequacy: valutazione misure attuali (adeguate/inadeguate/parziali)
 - missing_dpi: array DPI mancanti con standard EN
 - control_measures: controlli tecnici/procedurali necessari
+- intelligent_recommendations: array di azioni specifiche per mitigare i rischi identificati (max 10)
 - loto_required: boolean se necessaria procedura LOTO
 - training_needs: formazione specifica richiesta
 - risk_level: livello rischio complessivo (basso/medio/alto/critico)
+
+IMPORTANTE: Il campo 'intelligent_recommendations' deve contenere azioni specifiche e contestuali basate sui documenti aziendali e sui rischi identificati. Non fornire raccomandazioni generiche ma azioni concrete per questo specifico lavoro.
 """
         
         # Get AI analysis
@@ -205,7 +208,10 @@ Fornisci risposta strutturata in JSON con:
                     "training_needs": ["Formazione uso attrezzature"],
                     "risk_level": "medio"
                 }
-                
+
+            # Extract citations from AI response for document traceability
+            citations = self.extract_citations_from_response(ai_response, all_docs)
+
         except Exception as e:
             print(f"[{self.name}] Analysis failed: {e}")
             # Use standardized error response
@@ -221,13 +227,21 @@ Fornisci risposta strutturata in JSON con:
                 "severity": risk.get("severity", "media")
             })
         
-        # Analyze existing actions and provide consolidated recommendations
-        recommended_actions = self._analyze_and_recommend_actions(
-            existing_actions, 
-            [],
-            ai_analysis.get("loto_required", False),
-            ai_analysis.get("risk_level", "medio")
-        )
+        # Use ONLY AI-generated recommendations - NO hardcoding allowed
+        recommended_actions = []
+
+        # Extract AI recommendations from different possible fields
+        if "intelligent_recommendations" in ai_analysis:
+            recommended_actions = ai_analysis["intelligent_recommendations"]
+        elif "safety_procedures" in ai_analysis:
+            recommended_actions = ai_analysis["safety_procedures"]
+        elif "recommended_actions" in ai_analysis:
+            recommended_actions = ai_analysis["recommended_actions"]
+
+        # Ensure we have a list of strings/dicts, limit to 10 max
+        if not isinstance(recommended_actions, list):
+            recommended_actions = []
+        recommended_actions = recommended_actions[:10]
         
         
         return {
@@ -245,6 +259,7 @@ Fornisci risposta strutturata in JSON con:
                 "loto_required": ai_analysis.get("loto_required", False)
             },
             "permits_required": ["Permesso Lavori Meccanici"] if ai_analysis.get("risk_level") in ["alto", "critico"] else [],
+            "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }
     

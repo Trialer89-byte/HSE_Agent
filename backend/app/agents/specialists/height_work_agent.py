@@ -170,9 +170,13 @@ Fornisci risposta strutturata in JSON con:
             # Return error - no hardcoded fallback
             return self.create_error_response(str(e))
         
-        # Build response based on AI analysis
-        if ai_analysis.get("height_work_detected", False):
-            classification = "LAVORI IN QUOTA IDENTIFICATI"
+        # Extract citations from AI response using enhanced base agent method
+        citations = self.extract_citations_from_response(ai_response, all_docs)
+
+        # Build response based on AI analysis - ALWAYS return AI recommendations
+        height_work_detected = ai_analysis.get("height_work_detected", False)
+        if True:  # Always execute - removed conditional barrier
+            classification = "LAVORI IN QUOTA IDENTIFICATI" if height_work_detected else "Analisi lavori in quota completata"
             
             # Convert AI analysis to standard format
             risks_identified = []
@@ -202,26 +206,9 @@ Fornisci risposta strutturata in JSON con:
                         "missing_dpi": len(ai_analysis.get("missing_dpi", []))
                     }
                 },
-                "permits_required": ["Permesso Lavori in Quota"] if ai_analysis.get("height_work_detected") else [],
+                "permits_required": ["Permesso Lavori in Quota"] if height_work_detected else [],
                 "ai_recommendations": ai_analysis.get("recommendations", []),
                 "recommendations": ai_analysis.get("recommendations", []),  # Keep for backwards compatibility
+                "citations": citations,  # Add citations to resolve orchestrator warning
                 "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
             }
-        
-        return {
-            "specialist": self.name,
-            "classification": "Nessun lavoro in quota identificato",
-            "ai_analysis_used": True,
-            "risks_identified": [],
-            "recommended_actions": [],
-            "existing_measures_evaluation": {
-                "existing_dpi": existing_dpi,
-                "existing_actions": existing_actions,
-                "dpi_adequacy": "N/A - Lavoro non in quota",
-                "actions_adequacy": "N/A - Lavoro non in quota",
-                "ai_assessment": ["Nessun rischio specifico per lavori in quota identificato"],
-                "risk_level": ai_analysis.get("risk_level", "basso") if 'ai_analysis' in locals() else "basso"
-            },
-            "recommendations": [],  # Keep for backwards compatibility
-            "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
-        }

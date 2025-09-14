@@ -7,14 +7,14 @@ from ..base_agent import BaseHSEAgent
 
 class ConfinedSpaceSpecialist(BaseHSEAgent):
     """AI-powered specialist for confined space entry operations"""
-    
+
     def __init__(self):
         super().__init__(
             name="ConfinedSpace_Specialist",
             specialization="Spazi Confinati",
             activation_keywords=[]  # Activated by Risk Mapping Agent
         )
-    
+
     def _get_system_message(self) -> str:
         return """
 ESPERTO IN SPAZI CONFINATI - Specialista DPR 177/2011 e procedure di accesso sicuro.
@@ -77,17 +77,17 @@ DPI E ATTREZZATURE CRITICHE:
 - Radio ATEX per comunicazione
 - Illuminazione ATEX
 """
-    
+
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """AI-powered confined space risk analysis"""
-        
+
         # Get available documents for context
         available_docs = context.get("documents", [])
         user_context = context.get('user_context', {})
-        
+
         # Get existing actions from permit
         existing_actions = permit_data.get('risk_mitigation_actions', [])
-        
+
         # Search for confined space-specific documents
         try:
             tenant_id = user_context.get("tenant_id", 1)
@@ -100,7 +100,7 @@ DPI E ATTREZZATURE CRITICHE:
         except Exception as e:
             print(f"[{self.name}] Document search failed: {e}")
             all_docs = available_docs
-        
+
         # Create comprehensive AI analysis prompt
         permit_summary = f"""
 PERMESSO DI LAVORO - ANALISI SPAZI CONFINATI:
@@ -160,16 +160,17 @@ Fornisci analisi strutturata in JSON con:
 - required_procedures: procedure obbligatorie DPR 177/2011
 - safety_equipment: attrezzature di sicurezza necessarie
 - required_dpi: DPI specifici per spazi confinati
+- recommendations: array raccomandazioni prioritarie
 """
-        
+
         # Get AI analysis
         try:
             ai_response = await self.get_gemini_response(permit_summary, all_docs)
-            
+
             # Parse AI response
             import json
             import re
-            
+
             # Extract JSON from AI response
             json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
             if json_match:
@@ -178,7 +179,10 @@ Fornisci analisi strutturata in JSON con:
                 # No valid JSON found - return error, don't use hardcoded fallback
                 print(f"[{self.name}] No valid JSON response from AI")
                 return self.create_error_response("AI did not provide valid JSON analysis")
-                
+
+            # Extract citations from AI response for document traceability
+            citations = self.extract_citations_from_response(ai_response, all_docs)
+
         except Exception as e:
             print(f"[{self.name}] Analysis failed: {e}")
             # Use standardized error response with confined space specific fields
@@ -190,15 +194,15 @@ Fornisci analisi strutturata in JSON con:
                 "regulatory_compliance": "N/A - Analysis failed"
             })
             return error_response
-        
+
         # Convert AI analysis to standard orchestrator format
         risks_identified = []
-        
+
         # Process confined space classification
         classification = ai_analysis.get("confined_space_classification", "non_confinato")
         atmospheric_hazards = ai_analysis.get("atmospheric_hazards", [])
         physical_hazards = ai_analysis.get("physical_hazards", [])
-        
+
         # Add atmospheric risks
         for hazard in atmospheric_hazards:
             if hazard and "Nessun" not in hazard and "nessun" not in hazard:
@@ -209,7 +213,7 @@ Fornisci analisi strutturata in JSON con:
                     "description": hazard,
                     "severity": severity
                 })
-        
+
         # Add physical risks
         for hazard in physical_hazards:
             if hazard and hazard != "Standard" and "Nessun" not in hazard:
@@ -219,7 +223,7 @@ Fornisci analisi strutturata in JSON con:
                     "description": f"Rischio fisico spazio confinato: {hazard}",
                     "severity": "alta"
                 })
-        
+
         # If no significant risks detected
         if not risks_identified:
             risks_identified.append({
@@ -228,20 +232,15 @@ Fornisci analisi strutturata in JSON con:
                 "description": "Non classificato come spazio confinato secondo DPR 177/2011",
                 "severity": "bassa"
             })
-        
+
         # Determine if DPR 177/2011 applies
         is_confined_space = classification == "confinato" or any("confinato" in str(risk).lower() for risk in risks_identified)
-        
-        # Analyze existing actions and provide consolidated recommendations
-        recommended_actions = self._analyze_and_recommend_confined_space_actions(
-            existing_actions,
-            ai_analysis.get("required_procedures", []),
-            is_confined_space,
-            len([r for r in risks_identified if r.get("severity") == "critica"]) > 0
-        )
-        
+
+        # Use AI-generated recommendations directly - no hardcoded actions
+        recommended_actions = ai_analysis.get("recommendations", [])
+
         safety_equipment = ai_analysis.get("safety_equipment", [])
-        
+
         return {
             "specialist": self.name,
             "classification": f"SPAZIO CONFINATO - DPR 177/2011 APPLICABILE" if is_confined_space else "NON SPAZIO CONFINATO",
@@ -268,87 +267,6 @@ Fornisci analisi strutturata in JSON con:
                 "Comunicazione diretta emergenza medica"
             ] if is_confined_space else [],
             "regulatory_compliance": "DPR 177/2011 - Qualificazione imprese OBBLIGATORIA" if is_confined_space else "Non applicabile",
+            "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }
-
-    def _analyze_and_recommend_confined_space_actions(
-        self, 
-        existing_actions: List[str], 
-        ai_suggested_procedures: List[str],
-        is_confined_space: bool,
-        has_critical_risks: bool
-    ) -> List[Dict[str, Any]]:
-        """
-        Analyze existing actions and provide confined space safety recommendations by criticality
-        Limited to max 10 actions prioritized by DPR 177/2011 compliance and life safety
-        """
-        recommendations = []
-        
-        # Critical actions (mandatory for confined spaces per DPR 177/2011)
-        critical_actions = []
-        if is_confined_space:
-            critical_actions.extend([
-                "Verifica qualificazione impresa (DPR 177/2011 Art. 6)",
-                "Emissione Confined Space Entry Permit",
-                "Test atmosfera pre-ingresso (O2, LEL, H2S, CO)",
-                "Supervisore competente sempre presente durante lavori"
-            ])
-            
-            if has_critical_risks:
-                critical_actions.extend([
-                    "Sistema respiratorio autonomo o aria respirabile",
-                    "Equipaggio di emergenza qualificato on-site"
-                ])
-        
-        # High priority actions
-        high_priority_actions = []
-        for procedure in ai_suggested_procedures[:3]:  # Top 3 AI suggestions
-            if procedure not in critical_actions:
-                high_priority_actions.append(procedure)
-        
-        # Medium priority actions (improvements to existing measures)
-        medium_priority_actions = []
-        if existing_actions:
-            medium_priority_actions.append("Verifica conformità DPR 177/2011 delle misure esistenti")
-            medium_priority_actions.append("Aggiornamento procedure spazi confinati")
-        else:
-            medium_priority_actions.extend([
-                "Sviluppo procedura specifica spazio confinato",
-                "Formazione personale DPR 177/2011 (16 ore minimo)"
-            ])
-        
-        # Build prioritized recommendations
-        action_id = 1
-        
-        # Add critical actions
-        for action in critical_actions[:4]:  # Max 4 critical
-            recommendations.append({
-                "id": action_id,
-                "action": action,
-                "criticality": "critica",
-                "type": "confined_space_safety"
-            })
-            action_id += 1
-        
-        # Add high priority actions  
-        for action in high_priority_actions[:3]:  # Max 3 high
-            recommendations.append({
-                "id": action_id,
-                "action": action,
-                "criticality": "alta",
-                "type": "confined_space_control"
-            })
-            action_id += 1
-            
-        # Add medium priority actions
-        for action in medium_priority_actions[:3]:  # Max 3 medium
-            recommendations.append({
-                "id": action_id,
-                "action": action,
-                "criticality": "media",
-                "type": "confined_space_improvement"
-            })
-            action_id += 1
-            
-        # Limit to maximum 10 total actions
-        return recommendations[:10]

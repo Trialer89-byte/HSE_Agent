@@ -198,7 +198,10 @@ Fornisci analisi strutturata in JSON con:
                 # No valid JSON found - return error, don't use hardcoded fallback
                 print(f"[{self.name}] No valid JSON response from AI")
                 return self.create_error_response("AI did not provide valid JSON analysis")
-                
+
+            # Extract citations from AI response for document traceability
+            citations = self.extract_citations_from_response(ai_response, all_docs)
+
         except Exception as e:
             print(f"[{self.name}] AI analysis failed: {e}")
             # Return error - no hardcoded fallback
@@ -277,5 +280,6 @@ Fornisci analisi strutturata in JSON con:
                 "Conformità Regolamento CLP e Direttive ATEX"
             ],
             "recommendations": ai_analysis.get("recommendations", []),  # Keep for backwards compatibility
+            "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }

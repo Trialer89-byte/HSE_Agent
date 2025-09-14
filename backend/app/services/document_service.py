@@ -182,7 +182,8 @@ class DocumentService:
             self.db.commit()
             self.db.refresh(document)
             
-            # Add chunks to vector database with timeout
+            # Add chunks to vector database with extended timeout and better error handling
+            print(f"[DocumentService] Starting Weaviate sync for document {document_code} with {len(chunks)} chunks")
             try:
                 chunk_ids = await asyncio.wait_for(
                     self.vector_service.add_document_chunks(
@@ -194,10 +195,12 @@ class DocumentService:
                         category=category,
                         tenant_id=tenant_id,
                         industry_sectors=industry_sectors,
-                        authority=authority
+                        authority=authority,
+                        max_retries=3  # Explicit retry count
                     ),
-                    timeout=300.0  # 5 minutes timeout for vector processing
+                    timeout=600.0  # 10 minutes timeout for vector processing (increased)
                 )
+                print(f"[DocumentService] ✅ Weaviate sync completed successfully for {document_code}: {len(chunk_ids)} chunks added")
             except asyncio.TimeoutError:
                 # Clean up on timeout - delete document and file
                 print(f"[DocumentService] Vector processing timed out for document {document.id}")
@@ -214,20 +217,52 @@ class DocumentService:
                     detail="Document processing timed out. The document is too large or complex. Document has been removed."
                 )
             except Exception as vector_error:
-                # Clean up on vector processing error
+                # Try fallback sync before giving up
                 print(f"[DocumentService] Vector processing failed for document {document.id}: {str(vector_error)}")
+                print(f"[DocumentService] Attempting fallback Weaviate sync for {document_code}")
                 
-                # Delete document from database
-                self.db.delete(document)
-                self.db.commit()
-                
-                # Delete file from storage
-                await self.storage_service.delete_file(file_path)
-                
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to process document vectors: {str(vector_error)}. Document has been removed."
-                )
+                try:
+                    # Use fallback method with first chunk content or summary
+                    fallback_content = content[:2000] if len(content) > 2000 else content
+                    if not fallback_content.strip() and chunks:
+                        fallback_content = chunks[0].get("content", "")[:2000]
+                    
+                    if fallback_content.strip():
+                        fallback_uuid = await self.vector_service.add_single_document_chunk_fallback(
+                            document_code=document_code,
+                            title=title,
+                            content=fallback_content,
+                            document_type=document_type,
+                            category=category or "generale",
+                            tenant_id=tenant_id,
+                            industry_sectors=industry_sectors,
+                            authority=authority
+                        )
+                        
+                        if fallback_uuid:
+                            print(f"[DocumentService] ✅ Fallback sync succeeded for {document_code}")
+                            # Update document with fallback vector_id
+                            document.vector_id = fallback_uuid
+                            document.relevance_score = 0.8
+                            self.db.commit()
+                            chunk_ids = [fallback_uuid]
+                        else:
+                            raise Exception("Fallback sync also failed")
+                    else:
+                        raise Exception("No content available for fallback sync")
+                        
+                except Exception as fallback_error:
+                    print(f"[DocumentService] Fallback sync also failed: {str(fallback_error)}")
+                    
+                    # Only now clean up and fail
+                    self.db.delete(document)
+                    self.db.commit()
+                    await self.storage_service.delete_file(file_path)
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to process document vectors (both normal and fallback methods failed): {str(vector_error)}. Document has been removed."
+                    )
             
             # Store first chunk ID as vector_id and calculate overall relevance score
             if chunk_ids:

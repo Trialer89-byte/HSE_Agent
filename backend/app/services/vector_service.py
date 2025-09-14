@@ -93,6 +93,43 @@ class VectorService:
             print(f"[VectorService] Connection test failed: {str(e)}")
             return False
     
+    async def _test_connection_health(self) -> bool:
+        """Test current connection health"""
+        if not self.client:
+            return False
+        try:
+            # Quick health check
+            return self.client.is_ready()
+        except Exception as e:
+            print(f"[VectorService] Health check failed: {e}")
+            return False
+    
+    async def _attempt_reconnection(self):
+        """Attempt to reconnect to Weaviate"""
+        print("[VectorService] Attempting reconnection...")
+        self.client = None
+        
+        connection_strategies = [
+            self._try_anonymous_connection,
+            self._try_api_key_connection,
+            self._try_startup_period_connection,
+            self._try_basic_connection
+        ]
+        
+        for strategy in connection_strategies:
+            try:
+                client = strategy()
+                if client and self._test_connection(client):
+                    self.client = client
+                    print(f"[VectorService] Reconnected using {strategy.__name__}")
+                    return True
+            except Exception as e:
+                print(f"[VectorService] {strategy.__name__} reconnection failed: {str(e)}")
+                continue
+        
+        print("[VectorService] All reconnection attempts failed")
+        return False
+    
     def _ensure_schema(self):
         """
         Ensure HSEDocument schema exists in Weaviate
@@ -192,86 +229,170 @@ class VectorService:
         category: str,
         tenant_id: int,
         industry_sectors: List[str] = None,
-        authority: str = None
+        authority: str = None,
+        max_retries: int = 3
     ) -> List[str]:
         """
-        Add document chunks to vector database using batch operations
+        Add document chunks to vector database using batch operations with retry logic
         """
         if not self.client:
-            print("[VectorService] No client available, skipping chunk addition")
-            return []
+            print("[VectorService] No client available, attempting reconnection...")
+            # Try to reconnect
+            await self._attempt_reconnection()
+            if not self.client:
+                print("[VectorService] Reconnection failed, skipping chunk addition")
+                return []
             
         chunk_ids = []
         
+        # Retry logic for robust upload
+        for attempt in range(max_retries):
+            try:
+                print(f"[VectorService] Attempt {attempt + 1}/{max_retries} for document {document_code}")
+                
+                # Test connection before proceeding
+                if not await self._test_connection_health():
+                    print(f"[VectorService] Connection unhealthy on attempt {attempt + 1}, trying to reconnect")
+                    await self._attempt_reconnection()
+                    if not self.client:
+                        raise Exception("Failed to establish healthy connection")
+                
+                # Configure batch with optimal settings for timeout resilience
+                batch_size = min(20, max(5, len(chunks) // 10))  # Dynamic batch size based on chunks
+                print(f"[VectorService] Using batch size: {batch_size} for {len(chunks)} chunks")
+                
+                self.client.batch.configure(
+                    batch_size=batch_size,
+                    dynamic=True,  # Dynamic batching for better performance
+                    timeout_retries=5,  # Increased retries for timeout resilience
+                    callback=self._batch_callback,
+                    connection_error_retries=3,  # Handle connection errors
+                )
+                
+                # Prepare all objects for batch insertion
+                successful_chunks = 0
+                failed_chunks = 0
+                
+                with self.client.batch as batch:
+                    for i, chunk in enumerate(chunks):
+                        try:
+                            # Prepare object data
+                            obj_data = {
+                                "document_code": document_code,
+                                "title": title,
+                                "content": chunk.get("content", ""),
+                                "content_chunk": chunk.get("content", ""),
+                                "document_type": document_type,
+                                "category": category,
+                                "industry_sectors": industry_sectors or [],
+                                "tenant_id": tenant_id,
+                                "authority": authority or "",
+                                "relevance_score": chunk.get("relevance_score", 0.0),
+                                "chunk_index": chunk.get("chunk_index", i),
+                                "section_title": chunk.get("section_title", f"Sezione {i+1}")
+                            }
+                            
+                            # Add to batch
+                            uuid = batch.add_data_object(
+                                data_object=obj_data,
+                                class_name="HSEDocument"
+                            )
+                            chunk_ids.append(uuid)
+                            successful_chunks += 1
+                            
+                        except Exception as chunk_error:
+                            print(f"[VectorService] Error processing chunk {i}: {chunk_error}")
+                            failed_chunks += 1
+                            # Continue processing other chunks
+                            continue
+                        
+                        # Log progress
+                        if (i + 1) % batch_size == 0:
+                            print(f"[VectorService] Processed {i + 1}/{len(chunks)} chunks (Success: {successful_chunks}, Failed: {failed_chunks})")
+                    
+                    # Final flush happens automatically on context exit
+                    print(f"[VectorService] Completed batch processing: {successful_chunks} successful, {failed_chunks} failed out of {len(chunks)} total chunks")
+                    
+                    # Check success rate
+                    if failed_chunks > len(chunks) * 0.1:  # More than 10% failed
+                        if attempt < max_retries - 1:
+                            print(f"[VectorService] High failure rate ({failed_chunks}/{len(chunks)}), retrying...")
+                            continue
+                        else:
+                            raise Exception(f"Too many chunk failures after {max_retries} attempts: {failed_chunks}/{len(chunks)}")
+                    
+                    # Success - break retry loop
+                    print(f"[VectorService] Successfully uploaded {successful_chunks} chunks for {document_code}")
+                    return chunk_ids
+                    
+            except Exception as e:
+                print(f"[VectorService] Attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    import asyncio
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                else:
+                    print(f"[VectorService] All {max_retries} attempts failed for document {document_code}")
+                    # Return partial results if some chunks were successful
+                    if chunk_ids:
+                        print(f"[VectorService] Returning {len(chunk_ids)} successful chunk IDs despite errors")
+                        return chunk_ids
+                    raise Exception(f"Failed to upload chunks after {max_retries} attempts: {e}")
+        
+        # Should not reach here, but return partial results if available
+        return chunk_ids
+    
+    async def add_single_document_chunk_fallback(
+        self,
+        document_code: str,
+        title: str,
+        content: str,
+        document_type: str,
+        category: str,
+        tenant_id: int,
+        industry_sectors: List[str] = None,
+        authority: str = None
+    ) -> Optional[str]:
+        """
+        Fallback method to add a single document chunk directly to Weaviate
+        Used when batch processing fails entirely
+        """
+        if not self.client:
+            print("[VectorService] No client available for fallback sync")
+            return None
+        
         try:
-            # Configure batch with optimal settings for timeout resilience
-            batch_size = 25  # Further reduced to minimize timeout risk
-            self.client.batch.configure(
-                batch_size=batch_size,
-                dynamic=True,  # Dynamic batching for better performance
-                timeout_retries=5,  # Increased retries for timeout resilience
-                callback=self._batch_callback,
-                connection_error_retries=3,  # Handle connection errors
-                # weaviate_error_retries=3  # Handle Weaviate-specific errors (available in newer versions)
+            obj_data = {
+                "document_code": document_code,
+                "title": title,
+                "content": content,
+                "content_chunk": content,
+                "document_type": document_type,
+                "category": category,
+                "industry_sectors": industry_sectors or [],
+                "tenant_id": tenant_id,
+                "authority": authority or "",
+                "relevance_score": 0.8,  # Default good score
+                "chunk_index": 0,
+                "section_title": f"Documento {title}"
+            }
+            
+            # Direct object creation (no batch)
+            result = self.client.data_object.create(
+                data_object=obj_data,
+                class_name="HSEDocument"
             )
             
-            # Prepare all objects for batch insertion
-            successful_chunks = 0
-            failed_chunks = 0
-            
-            with self.client.batch as batch:
-                for i, chunk in enumerate(chunks):
-                    try:
-                        # Prepare object data
-                        obj_data = {
-                            "document_code": document_code,
-                            "title": title,
-                            "content": chunk.get("content", ""),
-                            "content_chunk": chunk.get("content", ""),
-                            "document_type": document_type,
-                            "category": category,
-                            "industry_sectors": industry_sectors or [],
-                            "tenant_id": tenant_id,
-                            "authority": authority or "",
-                            "relevance_score": chunk.get("relevance_score", 0.0),
-                            "chunk_index": chunk.get("chunk_index", i),
-                            "section_title": chunk.get("section_title", f"Sezione {i+1}")
-                        }
-                        
-                        # Add to batch
-                        uuid = batch.add_data_object(
-                            data_object=obj_data,
-                            class_name="HSEDocument"
-                        )
-                        chunk_ids.append(uuid)
-                        successful_chunks += 1
-                        
-                    except Exception as chunk_error:
-                        print(f"[VectorService] Error processing chunk {i}: {chunk_error}")
-                        failed_chunks += 1
-                        # Continue processing other chunks
-                        continue
-                    
-                    # Log progress every 25 chunks (reduced batch size)
-                    if (i + 1) % 25 == 0:
-                        print(f"[VectorService] Processed {i + 1}/{len(chunks)} chunks (Success: {successful_chunks}, Failed: {failed_chunks})")
-                
-                # Final flush happens automatically on context exit
-                print(f"[VectorService] Completed batch processing: {successful_chunks} successful, {failed_chunks} failed out of {len(chunks)} total chunks")
-                
-                # Raise error if too many failures
-                if failed_chunks > len(chunks) * 0.1:  # More than 10% failed
-                    raise Exception(f"Too many chunk failures: {failed_chunks}/{len(chunks)}")
+            if result:
+                print(f"[VectorService] ✅ Fallback sync successful for {document_code}")
+                return result
+            else:
+                print(f"[VectorService] ❌ Fallback sync failed for {document_code}")
+                return None
                 
         except Exception as e:
-            print(f"Error adding document chunks: {e}")
-            # Return partial results if some chunks were successful
-            if chunk_ids:
-                print(f"[VectorService] Returning {len(chunk_ids)} successful chunk IDs despite errors")
-                return chunk_ids
-            raise
-        
-        return chunk_ids
+            print(f"[VectorService] Fallback sync error for {document_code}: {e}")
+            return None
     
     async def hybrid_search(
         self,

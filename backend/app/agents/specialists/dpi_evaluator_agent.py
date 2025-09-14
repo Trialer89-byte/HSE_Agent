@@ -255,6 +255,9 @@ NON AGGIUNGERE TESTO PRIMA O DOPO IL JSON.
             if ai_analysis is None:
                 print(f"[{self.name}] Failed to parse AI JSON response")
                 return self.create_error_response("AI did not provide valid JSON analysis")
+
+            # Extract citations from AI response for document traceability
+            citations = self.extract_citations_from_response(ai_response, all_docs)
             
             # Validate response schema
             validation_result = self._validate_dpi_response_schema(ai_analysis)
@@ -315,6 +318,7 @@ NON AGGIUNGERE TESTO PRIMA O DOPO IL JSON.
             },
             "permits_required": ["Certificazione DPI Categoria III"] if ai_analysis.get("required_training") else [],
             "ai_recommendations": ai_analysis.get("normative_compliance", []),
+            "citations": citations,  # Add citations for document traceability
             "raw_ai_response": ai_response[:500] if 'ai_response' in locals() else "N/A"
         }
     

@@ -16,6 +16,7 @@ if not tenant:
         name="Default Company",
         display_name="Default Company",
         domain="default.hse-enterprise.local",
+        deployment_mode=DeploymentMode.SAAS,
         settings={
             "max_users": 100,
             "max_documents": 1000,
@@ -23,6 +24,9 @@ if not tenant:
             "require_approval": True
         },
         subscription_plan=SubscriptionPlan.ENTERPRISE,
+        max_users=100,
+        max_documents=1000,
+        max_storage_gb=10,
         is_active=True
     )
     db.add(tenant)

@@ -381,9 +381,22 @@ class AdvancedHSEOrchestrator:
                 "ai_analysis_used": False
             }
         
-        # Verify document citations are present
+        # Verify document citations are present - MANDATORY for all specialists
         if not result.get("citations") and not result.get("error"):
             result["warning"] = "Specialist did not provide required document citations"
+            print(f"[{self.__class__.__name__}] WARNING: {specialist.name} did not provide citations for document traceability")
+
+        # Validate Weaviate usage - MANDATORY for all specialists before suggesting actions
+        elif result.get("citations") and not result.get("error"):
+            if hasattr(specialist, 'validate_weaviate_usage'):
+                weaviate_validation = specialist.validate_weaviate_usage(result["citations"])
+                result["weaviate_validation"] = weaviate_validation
+
+                if weaviate_validation["compliance"] == "NON_COMPLIANT":
+                    result["warning"] = weaviate_validation["warning"]
+                    print(f"[{self.__class__.__name__}] WEAVIATE WARNING: {specialist.name} - {weaviate_validation['warning']}")
+                else:
+                    print(f"[{self.__class__.__name__}] WEAVIATE ✅: {specialist.name} used {weaviate_validation['weaviate_count']} Weaviate documents")
         
         # Add metadata enhancements
         if permit_metadata.get("site_specific_controls"):
