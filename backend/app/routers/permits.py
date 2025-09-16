@@ -61,7 +61,6 @@ def convert_enhanced_result_to_response_format(enhanced_result: Dict, permit_id:
                 type=action.get("type", "safety_action"),
                 priority=action.get("priority", "medium"),
                 suggested_action=action.get("suggested_action", action.get("title", "Azione di sicurezza")),
-                references=action.get("references", []),
                 frontend_display=action.get("frontend_display", {
                     "icon": "⚠️" if action.get("priority") == "high" else "📋",
                     "color": "red" if action.get("priority") == "high" else "blue",
@@ -77,7 +76,6 @@ def convert_enhanced_result_to_response_format(enhanced_result: Dict, permit_id:
                 type="safety_action",
                 priority=action.get("priority", "medium"),
                 suggested_action=action.get("suggested_action", action.get("action", action.get("title", "Azione di sicurezza"))),
-                references=action.get("references", []),
                 frontend_display={
                     "icon": "⚠️" if action.get("priority") == "high" else "📋",
                     "color": "red" if action.get("priority") == "high" else "blue",

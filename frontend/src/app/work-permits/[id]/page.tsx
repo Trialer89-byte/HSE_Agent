@@ -11,6 +11,7 @@ interface WorkPermit {
   description: string;
   work_type: string;
   location: string;
+  equipment?: string[];
   status: string;
   risk_level?: string;
   start_date?: string;
@@ -31,6 +32,9 @@ interface WorkPermit {
   ai_analysis?: any;
   risk_assessment?: any;
   action_items?: any[];
+  custom_fields?: {
+    workers_count?: number;
+  };
 }
 
 export default function WorkPermitDetailPage() {
@@ -137,8 +141,12 @@ export default function WorkPermitDetailPage() {
         start_date: formData.get('start_date') ? new Date(formData.get('start_date') as string).toISOString() : null,
         end_date: formData.get('end_date') ? new Date(formData.get('end_date') as string).toISOString() : null,
         status: formData.get('status')?.toString(),
+        equipment: formData.get('equipment') ? formData.get('equipment')?.toString().split(',').map(s => s.trim()).filter(s => s) : [],
         dpi_required: formData.get('dpi_required') ? formData.get('dpi_required')?.toString().split(',').map(s => s.trim()).filter(s => s) : [],
         risk_mitigation_actions: formData.get('risk_mitigation_actions') ? formData.get('risk_mitigation_actions')?.toString().split(',').map(s => s.trim()).filter(s => s) : [],
+        custom_fields: {
+          workers_count: formData.get('workers_count') ? parseInt(formData.get('workers_count') as string) : undefined
+        },
       };
 
       // Remove null/undefined values
@@ -343,6 +351,18 @@ export default function WorkPermitDetailPage() {
                       <dt className="text-sm font-medium text-gray-500">Workers Count</dt>
                       <dd className="mt-1 text-sm text-gray-900">
                         {permit.custom_fields.workers_count} workers
+                      </dd>
+                    </div>
+                  )}
+                  {permit.equipment && permit.equipment.length > 0 && (
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">Equipment</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        <ul className="list-disc list-inside">
+                          {permit.equipment.map((item, index) => (
+                            <li key={index}>{item}</li>
+                          ))}
+                        </ul>
                       </dd>
                     </div>
                   )}
@@ -553,22 +573,32 @@ export default function WorkPermitDetailPage() {
                     <div className="mb-6">
                       <h4 className="font-semibold text-gray-900 mb-3">🎯 Action Items</h4>
                       <div className="space-y-3">
-                        {permit.action_items.map((item: any, index: number) => (
+                        {permit.action_items.map((item: any, index: number) => {
+                          // Normalize priority to handle both English and Italian terms
+                          const normalizedPriority = (() => {
+                            const priority = item.priority?.toLowerCase();
+                            if (priority === 'alta' || priority === 'high' || priority === 'critica' || priority === 'critical') return 'alta';
+                            if (priority === 'media' || priority === 'medium') return 'media';
+                            if (priority === 'bassa' || priority === 'low') return 'bassa';
+                            return 'bassa'; // default fallback
+                          })();
+
+                          return (
                           <div key={index} className={`border rounded-lg p-4 ${
-                            item.priority === 'alta' ? 'bg-red-50 border-red-200' :
-                            item.priority === 'media' ? 'bg-yellow-50 border-yellow-200' :
+                            normalizedPriority === 'alta' ? 'bg-red-50 border-red-200' :
+                            normalizedPriority === 'media' ? 'bg-yellow-50 border-yellow-200' :
                             'bg-blue-50 border-blue-200'
                           }`}>
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <div className="flex items-center mb-2">
                                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                    item.priority === 'alta' ? 'bg-red-100 text-red-800' :
-                                    item.priority === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                                    normalizedPriority === 'alta' ? 'bg-red-100 text-red-800' :
+                                    normalizedPriority === 'media' ? 'bg-yellow-100 text-yellow-800' :
                                     'bg-blue-100 text-blue-800'
                                   }`}>
-                                    {item.priority === 'alta' ? '🔴 Alta' :
-                                     item.priority === 'media' ? '🟡 Media' : '🔵 Bassa'}
+                                    {normalizedPriority === 'alta' ? '🔴 Alta' :
+                                     normalizedPriority === 'media' ? '🟡 Media' : '🔵 Bassa'}
                                   </span>
                                   <span className="ml-2 text-xs text-gray-500">
                                     {item.type?.replace('_', ' ') || 'Safety Action'}
@@ -589,7 +619,7 @@ export default function WorkPermitDetailPage() {
                                   </div>
                                 )}
                               </div>
-                              
+
                               <div className="ml-4 flex-shrink-0">
                                 {item.frontend_display?.icon && (
                                   <span className="text-lg">
@@ -601,7 +631,8 @@ export default function WorkPermitDetailPage() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -742,6 +773,20 @@ export default function WorkPermitDetailPage() {
                     </select>
                   </div>
 
+
+                  {/* Equipment */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Equipment (comma-separated)
+                    </label>
+                    <input
+                      name="equipment"
+                      type="text"
+                      defaultValue={permit?.equipment?.join(', ')}
+                      placeholder="Multimetro, Pinze amperometriche, Tester isolamento"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
                   {/* Workers Count */}
                   <div>

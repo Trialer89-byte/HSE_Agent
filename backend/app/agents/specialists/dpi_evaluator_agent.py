@@ -32,12 +32,49 @@ COMPETENZE PRINCIPALI:
    - Marcatura CE e categorie DPI (I, II, III)
    - Obblighi formazione per DPI categoria III
 
-3. SELEZIONE TECNICA DPI
-   Per ogni rischio identificato:
-   - Tipo specifico di DPI
-   - Norma tecnica di riferimento (EN/ISO)
-   - Livello di protezione richiesto
-   - Caratteristiche tecniche minime
+3. SELEZIONE TECNICA DPI PER CATEGORIA RISCHIO
+
+   RISCHI ELETTRICI:
+   - Guanti isolanti (EN 60903): Classe 00 (BT), Classe 0-4 (MT/AT)
+   - Scarpe isolanti (EN 50321): Classe 00-3 secondo tensione
+   - Elmetti dielettrici (EN 397): Proprietà elettriche opzionali
+   - Indumenti antistatici per ATEX (EN 1149)
+
+   RISCHI CHIMICI/ATEX:
+   - Protezione respiratoria: Filtri A/B/E/K/P secondo sostanza
+   - SCBA per IDLH o O2<19.5%
+   - Indumenti chimici: Tipo 1-6 secondo permeazione
+   - Guanti resistenti permeazione chimica (EN 374)
+   - Calzature antistatiche per ATEX (EN 345 S1/S2/S3)
+
+   LAVORI IN QUOTA (>2m):
+   - Imbracatura anticaduta (EN 361): Punto attacco dorsale/sternale
+   - Cordini con assorbitore energia (EN 355)
+   - Dispositivi retrattili (EN 360)
+   - Elmetti con sottogola (EN 397/EN 12492)
+   - Scarpe antiscivolo con suola antiperforazione
+
+   LAVORI A CALDO:
+   - Maschera saldatura DIN 9-14 secondo processo
+   - Indumenti ignifughi (EN 11611/11612)
+   - Guanti saldatore (EN 12477)
+   - Scarpe resistenti calore
+   - Protezione respiratoria per fumi metallici
+   - Grembiuli/ghette in cuoio
+
+   SPAZI CONFINATI:
+   - SCBA o sistema aria respirabile con linea
+   - Imbracatura con punto aggancio dorsale per recupero
+   - Rilevatore multigas portatile calibrato
+   - Radio/comunicazione ATEX
+   - Illuminazione portatile ATEX
+
+   RISCHI MECCANICI GENERALI:
+   - Guanti resistenti taglio/abrasione (EN 388)
+   - Scarpe antinfortunistiche S1/S2/S3 (EN 345)
+   - Elmetti di protezione (EN 397)
+   - Occhiali/visiere protezione (EN 166)
+   - Indumenti alta visibilità (EN 471)
 
 4. VERIFICA COMPATIBILITÀ
    - Interferenze tra DPI diversi
@@ -82,8 +119,9 @@ OUTPUT STRUTTURATO:
         risk_mapping = classification.get("risk_mapping", {})
         detected_risks = risk_mapping.get("detected_risks", {})
         
-        # Extract electrical risk information directly from risk mapping
-        electrical_risk_info = self._extract_electrical_risk_from_mapping(detected_risks, permit_data)
+        # Extract comprehensive risk information directly from risk mapping
+        all_risk_info = self._extract_all_risks_from_mapping(detected_risks, permit_data)
+        electrical_risk_info = all_risk_info.get("electrical", {})
         
         # Get specialist results for additional context (but don't depend on them)
         specialist_results = context.get("specialist_results", {})
@@ -110,50 +148,29 @@ OUTPUT STRUTTURATO:
         # Create comprehensive AI analysis prompt with risk-based electrical analysis
         detected_risks_summary = ", ".join(detected_risks.keys()) if detected_risks else "Nessun rischio specifico identificato"
         
-        # Build electrical context from risk mapping (primary) and specialist (secondary)
-        electrical_info = ""
-        if electrical_risk_info["has_electrical_risk"]:
-            voltage_info = electrical_risk_info.get("voltage_level", "sconosciuto")
-            confidence = electrical_risk_info.get("confidence", 0.0)
-            electrical_details = electrical_risk_info.get("risk_details", [])
-            
-            # Combine with specialist info if available
-            if additional_electrical_context and additional_electrical_context.get("voltage_level"):
-                voltage_info = additional_electrical_context.get("voltage_level", voltage_info)
-            
-            electrical_info = f"""
-RISCHIO ELETTRICO IDENTIFICATO DAL RISK MAPPING:
-- Presenza lavori elettrici: SÌ (confidenza: {confidence:.1f})
-- Livello tensione stimato: {voltage_info}
-- Dettagli rischio elettrico: {', '.join(electrical_details) if electrical_details else 'Rischio elettrico generico'}
-- Fonte primaria: Risk Mapping Agent
-{f"- Contesto aggiuntivo specialista: {additional_electrical_context}" if additional_electrical_context else ""}
-"""
-        elif additional_electrical_context:
-            # Fallback to specialist context if risk mapping didn't detect electrical risk
-            voltage_level = additional_electrical_context.get("voltage_level", "unknown")
-            electrical_risks = additional_electrical_context.get("electrical_risks", [])
-            electrical_info = f"""
-CONTESTO ELETTRICO DA SPECIALISTA:
-- Livello tensione identificato: {voltage_level}
-- Rischi elettrici specifici: {', '.join(electrical_risks) if electrical_risks else 'Nessun rischio specifico'}
-- Tipo lavoro elettrico: {additional_electrical_context.get('work_type', 'non specificato')}
-"""
+        # Build comprehensive risk context from risk mapping
+        risks_context = self._build_risk_context_for_dpi(all_risk_info, additional_electrical_context)
         
         permit_summary = f"""
-PERMESSO DI LAVORO - VALUTAZIONE DPI (Dispositivi di Protezione Individuale):
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE - VALUTAZIONE DPI (Dispositivi di Protezione Individuale):
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
 
-RISCHI IDENTIFICATI DAL SISTEMA: {detected_risks_summary}
-{electrical_info}
-DPI ATTUALMENTE PREVISTI: {existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali DPI devono essere FORNITI PRIMA dell'inizio del lavoro.
 
-AZIONI MITIGAZIONE ATTUALI: {existing_actions if existing_actions else 'Nessuna azione specificata'}
+RISCHI IDENTIFICATI DAL SISTEMA: {detected_risks_summary}
+
+{risks_context}
+
+DPI PREVISTI NEL PERMESSO: {existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+
+AZIONI MITIGAZIONE PREVISTE: {existing_actions if existing_actions else 'Nessuna azione specificata'}
 
 VALUTA COMPLETAMENTE I REQUISITI DPI secondo D.Lgs 81/08 e Regolamento UE 2016/425:
 
@@ -194,25 +211,69 @@ VALUTA COMPLETAMENTE I REQUISITI DPI secondo D.Lgs 81/08 e Regolamento UE 2016/4
         * Calzature isolanti
         * Elmetto dielettrico EN 50365
 
-   b) RISCHI DA LAVORI IN ALTEZZA:
-      - Imbracatura anticaduta EN 361
-      - Cordini con assorbitore di energia EN 355
-      - Elmetto con sottogola EN 397
-      
-   c) RISCHI MECCANICI:
-      - Guanti anti-taglio EN 388 (livello appropriato)
-      - Occhiali di protezione EN 166
-      - Scarpe antinfortunistiche S3 EN ISO 20345
-      
-   d) RISCHI CHIMICI:
-      - Guanti resistenti a sostanze chimiche EN 374
-      - Respiratori o maschere filtranti EN 149/140
-      - Indumenti di protezione chimica EN 14605
-      
-   e) RISCHI DA CALORE/SALDATURA:
-      - Guanti per saldatura EN 12477
-      - Visiera per saldatura EN 175
-      - Indumenti ignifughi EN ISO 11612
+   b) RISCHI DA LAVORI IN QUOTA (>2 metri):
+      IMPORTANTE: Analizzare sempre se il lavoro comporta rischi di caduta dall'alto:
+
+      - PROTEZIONE ANTICADUTA OBBLIGATORIA:
+        * Imbracatura anticaduta EN 361 (punto attacco dorsale/sternale)
+        * Cordini con assorbitore energia EN 355 (lunghezza ≤2m)
+        * Dispositivi retrattili EN 360 per movimenti
+        * Elmetto con sottogola EN 397/EN 12492
+        * Scarpe antiscivolo con suola antiperforazione
+        * Guanti grip per presa sicura
+
+      - FORMAZIONE OBBLIGATORIA: DPI Categoria III
+
+   c) RISCHI CHIMICI E ATEX:
+      IMPORTANTE: Analizzare sempre presenza sostanze chimiche o atmosfere esplosive:
+
+      - PROTEZIONE RESPIRATORIA:
+        * Filtri A (organici), B (inorganici), E (acidi), K (ammoniaca), P (polveri)
+        * SCBA per IDLH o O2<19.5%
+        * Maschere filtranti EN 149 (FFP1/2/3)
+
+      - PROTEZIONE CORPO:
+        * Indumenti chimici Tipo 1-6 secondo permeazione EN 14605
+        * Indumenti antistatici ATEX EN 1149
+        * Guanti resistenti permeazione chimica EN 374
+        * Calzature antistatiche EN 345 S1/S2/S3
+
+      - FORMAZIONE OBBLIGATORIA: DPI Categoria III per respiratori
+
+   d) RISCHI DA LAVORI A CALDO:
+      IMPORTANTE: Analizzare sempre operazioni con fiamme, scintille, calore:
+
+      - PROTEZIONE SPECIFICA:
+        * Maschera saldatura DIN 9-14 secondo processo
+        * Indumenti ignifughi EN 11611 (saldatura) / EN 11612 (calore)
+        * Guanti saldatore EN 12477 (tipo A/B secondo lavoro)
+        * Scarpe resistenti calore e scintille
+        * Protezione respiratoria fumi metallici
+        * Grembiuli/ghette in cuoio per schizzi
+
+      - FORMAZIONE OBBLIGATORIA: Saldatura e DPI categoria II/III
+
+   e) RISCHI DA SPAZI CONFINATI:
+      IMPORTANTE: Analizzare sempre accesso a spazi con ventilazione limitata:
+
+      - PROTEZIONE VITALE:
+        * SCBA o sistema aria respirabile con linea
+        * Imbracatura con punto aggancio dorsale per recupero
+        * Rilevatore multigas portatile calibrato (O2, LEL, H2S, CO)
+        * Radio/comunicazione ATEX per spazio confinato
+        * Illuminazione portatile ATEX
+
+      - FORMAZIONE OBBLIGATORIA: DPI Categoria III e procedure spazi confinati
+
+   f) RISCHI MECCANICI GENERALI:
+      IMPORTANTE: Analizzare sempre presenza macchinari, utensili, materiali:
+
+      - PROTEZIONE BASE:
+        * Elmetto di protezione EN 397 (impatti, penetrazione)
+        * Occhiali/visiere protezione EN 166 (schizzi, proiezioni)
+        * Guanti resistenti taglio/abrasione EN 388 (livello appropriato)
+        * Scarpe antinfortunistiche S1/S2/S3 EN 345
+        * Indumenti alta visibilità EN 471 se necessario
 
 3. CATEGORIE DPI secondo Regolamento UE 2016/425:
    - Categoria I (rischi minimi): DPI semplici
@@ -225,16 +286,95 @@ VALUTA COMPLETAMENTE I REQUISITI DPI secondo D.Lgs 81/08 e Regolamento UE 2016/4
    - Compatibilità tra diversi DPI
    - Stato di manutenzione e integrità
 
+IMPORTANTE: ELIMINAZIONE INTELLIGENTE DUPLICATI DPI
+
+Prima di fornire la risposta, ANALIZZA ATTENTAMENTE i DPI raccomandati e ELIMINA tutti i duplicati seguendo questa logica:
+
+**STEP 1 - IDENTIFICAZIONE DUPLICATI:**
+Cerca DPI che proteggono la stessa zona corporea con funzioni sovrapposte:
+- Guanti isolanti vs guanti meccanici (se isolanti coprono anche meccanici)
+- Elmetto standard vs elmetto elettrico (se elettrico copre anche impatti)
+- Scarpe S1 vs scarpe isolanti (se isolanti coprono anche requisiti S1)
+
+**STEP 2 - CONSOLIDAMENTO INTELLIGENTE:**
+Per ogni zona corporea (mani, testa, piedi, occhi, corpo, respirazione):
+
+a) **SE hai DPI compatibili** → Scegli quello più completo che copre tutti i rischi:
+   - Esempio: "Guanti isolanti EN 60903 classe 1" invece di separare isolanti + meccanici
+   - Esempio: "Elmetto dielettrico EN 50365" invece di elmetto standard + elettrico
+
+b) **SE hai DPI incompatibili** → Mantieni entrambi con specifica dell'uso:
+   - Esempio: "Guanti isolanti EN 60903 (per lavori elettrici)" + "Guanti saldatore EN 12477 (per saldatura)"
+   - Questo SOLO se ci sono davvero operazioni elettriche E di saldatura nel permesso
+
+**STEP 3 - VERIFICA FINALE:**
+Prima di completare la risposta, rileggi l'array "missing_dpi" e verifica:
+- ❌ Non ci sono DPI identici o estremamente simili
+- ❌ Non ci sono DPI che si sovrappongono inutilmente
+- ✅ Ogni DPI multiplo per stessa zona ha giustificazione specifica tra parentesi
+- ✅ La lista è la più CONCISA possibile mantenendo la sicurezza
+
+**ESEMPI PRATICI DI DEDUPLICAZIONE:**
+
+❌ SBAGLIATO (duplicati):
+```json
+"missing_dpi": [
+  "Guanti resistenti EN 388",
+  "Guanti isolanti EN 60903",
+  "Guanti da lavoro meccanici",
+  "Elmetto EN 397",
+  "Elmetto elettrico EN 50365"
+]
+```
+
+✅ CORRETTO (deduplicato):
+```json
+"missing_dpi": [
+  "Guanti isolanti EN 60903 classe 1 (protezione elettrica e meccanica)",
+  "Elmetto dielettrico EN 50365 (protezione elettrica e impatti)"
+]
+```
+
+❌ SBAGLIATO (sovrapposizione inutile):
+```json
+"missing_dpi": [
+  "Occhiali protezione EN 166",
+  "Visiera trasparente",
+  "Protezione occhi"
+]
+```
+
+✅ CORRETTO (consolidato):
+```json
+"missing_dpi": [
+  "Occhiali protezione EN 166 con protezione laterale"
+]
+```
+
+SOLO SE ci sono operazioni davvero incompatibili (es. saldatura + elettrica):
+✅ ACCETTABILE:
+```json
+"missing_dpi": [
+  "Guanti isolanti EN 60903 classe 1 (per interventi elettrici)",
+  "Guanti saldatore EN 12477 tipo A (per saldatura TIG)",
+  "Maschera saldatura DIN 11 (per saldatura)"
+]
+```
+
 Fornisci risposta ESCLUSIVAMENTE in formato JSON con:
 - existing_dpi_adequacy: "adeguati" | "inadeguati" | "parziali"
-- missing_dpi: array di stringhe con DPI mancanti (es. "Guanti isolanti EN 60903 classe 1")
+- missing_dpi: array SENZA DUPLICATI con DPI consolidati e attività specifica se multipli (es. "Guanti isolanti EN 60903 classe 1 (lavori elettrici)")
 - required_training: array di stringhe con formazione richiesta
 - normative_compliance: stringa con conformità normative
 
 ESEMPIO FORMATO RISPOSTA:
 {{
   "existing_dpi_adequacy": "inadeguati",
-  "missing_dpi": ["Guanti isolanti EN 60903", "Elmetto dielettrico EN 50365"],
+  "missing_dpi": [
+    "Guanti isolanti EN 60903 classe 1 (per lavori elettrici MT)",
+    "Maschera saldatura DIN 11 (per operazioni saldatura)",
+    "Imbracatura anticaduta EN 361 (per lavori in quota)"
+  ],
   "required_training": ["Formazione DPI categoria III", "Addestramento lavori elettrici"],
   "normative_compliance": "D.Lgs 81/08 art. 75-79, UE 2016/425"
 }}
@@ -300,6 +440,7 @@ NON AGGIUNGERE TESTO PRIMA O DOPO IL JSON.
                 "severity": "bassa"
             })
         
+        # DPI requirements are already deduplicated by AI based on prompt instructions
         dpi_requirements = ai_analysis.get("missing_dpi", [])
         
         return {
@@ -384,102 +525,146 @@ NON AGGIUNGERE TESTO PRIMA O DOPO IL JSON.
                     electrical_risk_info["voltage_level"] = "BT"
         
         return electrical_risk_info
-    
-    def _deduplicate_and_optimize_dpi(self, dpi_list: List[str]) -> List[str]:
+
+    def _extract_all_risks_from_mapping(self, detected_risks: Dict[str, Any], permit_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Remove duplicates and optimize DPI recommendations for compatibility and coverage
+        Extract comprehensive risk information for all risk types from risk mapping results
         """
-        if not dpi_list:
-            return dpi_list
-        
-        # Group DPI by protection type
-        protection_groups = {
-            "hand": [],
-            "head": [],
-            "foot": [],
-            "eye_face": [],
-            "body": [],
-            "respiratory": [],
-            "fall": []
+        all_risks = {
+            "electrical": {"has_risk": False, "details": []},
+            "height_work": {"has_risk": False, "details": []},
+            "chemical": {"has_risk": False, "details": []},
+            "hot_work": {"has_risk": False, "details": []},
+            "confined_space": {"has_risk": False, "details": []},
+            "mechanical": {"has_risk": False, "details": []}
         }
-        
-        # Categorize each DPI item
-        for dpi in dpi_list:
-            dpi_lower = dpi.lower()
-            
-            if any(term in dpi_lower for term in ["guant", "glove", "mani"]):
-                protection_groups["hand"].append(dpi)
-            elif any(term in dpi_lower for term in ["elmetto", "casco", "helmet", "head"]):
-                protection_groups["head"].append(dpi)
-            elif any(term in dpi_lower for term in ["scarpe", "calzature", "boot", "shoe", "piedi"]):
-                protection_groups["foot"].append(dpi)
-            elif any(term in dpi_lower for term in ["occhial", "visiera", "goggle", "eye", "face", "viso"]):
-                protection_groups["eye_face"].append(dpi)
-            elif any(term in dpi_lower for term in ["indument", "tuta", "suit", "body", "corpo"]):
-                protection_groups["body"].append(dpi)
-            elif any(term in dpi_lower for term in ["respirator", "mask", "ffp", "aria", "respir"]):
-                protection_groups["respiratory"].append(dpi)
-            elif any(term in dpi_lower for term in ["imbracatura", "harness", "cordini", "anticaduta", "fall"]):
-                protection_groups["fall"].append(dpi)
-        
-        # Select best DPI for each protection group
-        optimized_dpi = []
-        
-        for group_name, group_items in protection_groups.items():
-            if not group_items:
-                continue
-                
-            if len(group_items) == 1:
-                optimized_dpi.append(group_items[0])
-            else:
-                # Resolve conflicts by selecting most comprehensive protection
-                best_dpi = self._select_best_dpi_for_group(group_name, group_items)
-                optimized_dpi.append(best_dpi)
-        
-        return optimized_dpi
-    
-    def _select_best_dpi_for_group(self, group_name: str, group_items: List[str]) -> str:
+
+        # Process detected risks from risk mapping
+        for risk_type, risk_info in detected_risks.items():
+            if risk_type == "electrical":
+                # Use existing electrical extraction logic
+                all_risks["electrical"] = self._extract_electrical_risk_from_mapping(detected_risks, permit_data)
+                all_risks["electrical"]["has_risk"] = all_risks["electrical"]["has_electrical_risk"]
+
+            elif risk_type in ["height", "height_work", "lavori_quota"]:
+                all_risks["height_work"]["has_risk"] = True
+                all_risks["height_work"]["details"] = [risk_info.get("description", "Lavori in quota identificati")]
+
+            elif risk_type in ["chemical", "chimico", "atex"]:
+                all_risks["chemical"]["has_risk"] = True
+                all_risks["chemical"]["details"] = [risk_info.get("description", "Rischi chimici/ATEX identificati")]
+
+            elif risk_type in ["hot_work", "lavori_caldo", "saldatura"]:
+                all_risks["hot_work"]["has_risk"] = True
+                all_risks["hot_work"]["details"] = [risk_info.get("description", "Lavori a caldo identificati")]
+
+            elif risk_type in ["confined_space", "spazi_confinati"]:
+                all_risks["confined_space"]["has_risk"] = True
+                all_risks["confined_space"]["details"] = [risk_info.get("description", "Spazi confinati identificati")]
+
+            elif risk_type in ["mechanical", "meccanico"]:
+                all_risks["mechanical"]["has_risk"] = True
+                all_risks["mechanical"]["details"] = [risk_info.get("description", "Rischi meccanici identificati")]
+
+        # Secondary analysis from permit text for missing risks
+        permit_text = f"{permit_data.get('title', '')} {permit_data.get('description', '')} {permit_data.get('work_type', '')}".lower()
+
+        # Height work keywords
+        if not all_risks["height_work"]["has_risk"]:
+            height_keywords = ["quota", "altezza", "tetto", "ponteggio", "scala", "piattaforma", "sopra", "metri"]
+            if any(keyword in permit_text for keyword in height_keywords):
+                all_risks["height_work"]["has_risk"] = True
+                all_risks["height_work"]["details"] = ["Lavori in quota identificati dal testo"]
+
+        # Chemical/ATEX keywords
+        if not all_risks["chemical"]["has_risk"]:
+            chemical_keywords = ["chimico", "solvente", "acido", "base", "gas", "vapore", "atex", "esplosivo"]
+            if any(keyword in permit_text for keyword in chemical_keywords):
+                all_risks["chemical"]["has_risk"] = True
+                all_risks["chemical"]["details"] = ["Rischi chimici identificati dal testo"]
+
+        # Hot work keywords
+        if not all_risks["hot_work"]["has_risk"]:
+            hot_work_keywords = ["saldatura", "taglio", "fiamma", "caldo", "scintille", "brasatura", "ossitaglio"]
+            if any(keyword in permit_text for keyword in hot_work_keywords):
+                all_risks["hot_work"]["has_risk"] = True
+                all_risks["hot_work"]["details"] = ["Lavori a caldo identificati dal testo"]
+
+        # Confined space keywords
+        if not all_risks["confined_space"]["has_risk"]:
+            confined_keywords = ["confinato", "serbatoio", "cisterna", "tunnel", "fossa", "pozzo", "cunicolo"]
+            if any(keyword in permit_text for keyword in confined_keywords):
+                all_risks["confined_space"]["has_risk"] = True
+                all_risks["confined_space"]["details"] = ["Spazi confinati identificati dal testo"]
+
+        # Mechanical keywords (always present as baseline)
+        if not all_risks["mechanical"]["has_risk"]:
+            mechanical_keywords = ["utensile", "macchinario", "meccanico", "taglio", "assemblaggio", "montaggio"]
+            if any(keyword in permit_text for keyword in mechanical_keywords) or permit_data.get('work_type') in ['meccanico', 'manutenzione']:
+                all_risks["mechanical"]["has_risk"] = True
+                all_risks["mechanical"]["details"] = ["Rischi meccanici identificati"]
+
+        return all_risks
+
+    def _build_risk_context_for_dpi(self, all_risk_info: Dict[str, Any], additional_electrical_context: Dict[str, Any]) -> str:
         """
-        Select the best DPI from a group when multiple options exist
+        Build comprehensive risk context for DPI analysis
         """
-        # Priority rules for each group
-        if group_name == "hand":
-            # Electrical protection takes priority over mechanical
-            electrical_gloves = [g for g in group_items if "isolanti" in g.lower() or "60903" in g]
-            if electrical_gloves:
-                # Select highest voltage class if multiple electrical gloves
-                highest_class = max(electrical_gloves, key=lambda x: len(x))
-                return highest_class
-            # Otherwise, select most comprehensive mechanical protection
-            return max(group_items, key=lambda x: len(x))
-        
-        elif group_name == "head":
-            # Electrical helmets take priority
-            electrical_helmets = [h for h in group_items if "dielettrico" in h.lower() or "50365" in h]
-            if electrical_helmets:
-                return electrical_helmets[0]
-            # Fall protection helmets with chin straps take priority
-            fall_helmets = [h for h in group_items if "sottogola" in h.lower()]
-            if fall_helmets:
-                return fall_helmets[0]
-            # Standard safety helmet
-            return group_items[0]
-        
-        elif group_name == "foot":
-            # Electrical shoes take priority
-            electrical_shoes = [s for s in group_items if "isolanti" in s.lower()]
-            if electrical_shoes:
-                return electrical_shoes[0]
-            # S3 safety shoes for general protection
-            s3_shoes = [s for s in group_items if "s3" in s.lower()]
-            if s3_shoes:
-                return s3_shoes[0]
-            # Most comprehensive option
-            return max(group_items, key=lambda x: len(x))
-        
-        else:
-            # For other groups, select the most comprehensive option
-            return max(group_items, key=lambda x: len(x))
+        context_parts = []
+
+        # Electrical risks
+        electrical_risk = all_risk_info.get("electrical", {})
+        if electrical_risk.get("has_risk") or electrical_risk.get("has_electrical_risk"):
+            voltage_info = electrical_risk.get("voltage_level", "sconosciuto")
+            confidence = electrical_risk.get("confidence", 0.0)
+            details = electrical_risk.get("risk_details", electrical_risk.get("details", []))
+
+            # Combine with specialist info if available
+            if additional_electrical_context and additional_electrical_context.get("voltage_level"):
+                voltage_info = additional_electrical_context.get("voltage_level", voltage_info)
+
+            context_parts.append(f"""RISCHIO ELETTRICO IDENTIFICATO:
+- Presenza lavori elettrici: SÌ (confidenza: {confidence:.1f})
+- Livello tensione stimato: {voltage_info}
+- Dettagli: {', '.join(details) if details else 'Rischio elettrico generico'}""")
+
+        # Height work risks
+        if all_risk_info.get("height_work", {}).get("has_risk"):
+            details = all_risk_info["height_work"].get("details", [])
+            context_parts.append(f"""RISCHIO LAVORI IN QUOTA IDENTIFICATO:
+- Presenza lavori >2m: SÌ
+- Dettagli: {', '.join(details) if details else 'Rischio caduta dall alto'}""")
+
+        # Chemical/ATEX risks
+        if all_risk_info.get("chemical", {}).get("has_risk"):
+            details = all_risk_info["chemical"].get("details", [])
+            context_parts.append(f"""RISCHIO CHIMICO/ATEX IDENTIFICATO:
+- Presenza sostanze pericolose: SÌ
+- Dettagli: {', '.join(details) if details else 'Esposizione sostanze chimiche/atmosfere esplosive'}""")
+
+        # Hot work risks
+        if all_risk_info.get("hot_work", {}).get("has_risk"):
+            details = all_risk_info["hot_work"].get("details", [])
+            context_parts.append(f"""RISCHIO LAVORI A CALDO IDENTIFICATO:
+- Presenza fiamme/scintille: SÌ
+- Dettagli: {', '.join(details) if details else 'Operazioni con sorgenti di ignizione'}""")
+
+        # Confined space risks
+        if all_risk_info.get("confined_space", {}).get("has_risk"):
+            details = all_risk_info["confined_space"].get("details", [])
+            context_parts.append(f"""RISCHIO SPAZI CONFINATI IDENTIFICATO:
+- Accesso spazi confinati: SÌ
+- Dettagli: {', '.join(details) if details else 'Ingresso spazi con ventilazione limitata'}""")
+
+        # Mechanical risks
+        if all_risk_info.get("mechanical", {}).get("has_risk"):
+            details = all_risk_info["mechanical"].get("details", [])
+            context_parts.append(f"""RISCHI MECCANICI IDENTIFICATI:
+- Presenza rischi meccanici: SÌ
+- Dettagli: {', '.join(details) if details else 'Uso utensili/macchinari'}""")
+
+        return "\n\n".join(context_parts) if context_parts else "NESSUN RISCHIO SPECIFICO IDENTIFICATO dal Risk Mapping"
+
     
     def _parse_ai_json_response(self, ai_response: str):
         """Parse AI JSON response with multiple fallback strategies"""

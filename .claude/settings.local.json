@@ -143,7 +143,9 @@
       "Bash(Select-String -Pattern \"(===|✅|❌|🎯)\")",
       "Bash(ForEach-Object { $_ine })",
       "Bash(dir \"C:\\Users\\federicoreginato\\Documents\\GitHub\\hse-agent\\backend\\alembic\\versions\")",
-      "Bash(xargs rm:*)"
+      "Bash(xargs rm:*)",
+      "Bash(dir \"C:\\Users\\federicoreginato\\Documents\\GitHub\\hse-agent\\frontend\\src\")",
+      "Bash(dir \"C:\\Users\\federicoreginato\\Documents\\GitHub\\hse-agent\\frontend\\src\\app\")"
     ],
     "deny": []
   }

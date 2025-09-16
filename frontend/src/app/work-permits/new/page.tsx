@@ -17,6 +17,7 @@ export default function NewWorkPermitPage() {
     description: '',
     work_type: 'manutenzione',
     location: '',
+    equipment: [] as string[],
     risk_level: 'medium',
     start_date: '',
     end_date: '',
@@ -263,6 +264,28 @@ export default function NewWorkPermitPage() {
               </div>
             </div>
 
+            {/* Equipment */}
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-4">Equipment</h2>
+
+              <div className="mb-4">
+                <label htmlFor="equipment" className="block text-sm font-medium text-gray-700 mb-1">
+                  Equipment and Tools Used
+                </label>
+                <textarea
+                  id="equipment"
+                  name="equipment"
+                  value={formData.equipment.join('\n')}
+                  onChange={(e) => handleArrayChange('equipment', e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter each equipment/tool on a new line:&#10;Multimetro&#10;Pinze amperometriche&#10;Tester isolamento&#10;Chiavi inglesi"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter each equipment or tool on a new line. This helps specialists assess safety requirements.
+                </p>
+              </div>
+            </div>
 
             {/* Safety Requirements */}
             <div className="mb-6">

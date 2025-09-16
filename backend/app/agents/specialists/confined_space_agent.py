@@ -44,7 +44,7 @@ PERICOLI TIPICI SPAZI CONFINATI:
 REQUISITI OBBLIGATORI (DPR 177/2011):
 ✓ Qualificazione specifica impresa (30% esperti)
 ✓ Formazione/addestramento tutto il personale
-✓ DPI specifici e dispositivi emergenza
+✓ Sistemi di monitoraggio e dispositivi emergenza
 ✓ Presenza continua supervisore esterno
 ✓ Piano di emergenza e recupero
 ✓ Confined Space Entry Permit
@@ -68,14 +68,13 @@ PROTOCOLLO ACCESSO SICURO:
    - Non-entry rescue preferito
    - Simulazioni periodiche obbligatorie
 
-DPI E ATTREZZATURE CRITICHE:
+SISTEMI E ATTREZZATURE CRITICHE:
 - Rilevatore multigas calibrato (O2, LEL, H2S, CO)
-- SCBA o aria respirabile con linea
-- Imbracatura con punto aggancio dorsale
+- Sistemi di ventilazione forzata ATEX
 - Tripode/argano per recupero verticale
-- Ventilatore ATEX con manichette
-- Radio ATEX per comunicazione
+- Sistemi di comunicazione ATEX
 - Illuminazione ATEX
+- Sistemi di isolamento energetico (LOTO)
 """
 
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,13 +102,17 @@ DPI E ATTREZZATURE CRITICHE:
 
         # Create comprehensive AI analysis prompt
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI SPAZI CONFINATI:
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE - SPAZI CONFINATI:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
 
 ANALIZZA COMPLETAMENTE I RISCHI SPAZI CONFINATI secondo:
 - DPR 177/2011 (Qualificazione imprese spazi confinati)
@@ -145,22 +148,29 @@ ANALIZZA COMPLETAMENTE I RISCHI SPAZI CONFINATI secondo:
    - Supervisore esterno sempre presente
    - Piano di emergenza e recupero
 
-5. DPI E ATTREZZATURE SPAZI CONFINATI:
+5. SISTEMI TECNICI SPAZI CONFINATI:
    - Rilevatore multigas continuo
-   - SCBA o sistema aria respirabile
-   - Imbracatura con recupero verticale
+   - Sistemi di ventilazione forzata ATEX
    - Tripode/argano per recupero
-   - Radio/comunicazione ATEX
-   - Ventilazione forzata ATEX
+   - Sistemi di comunicazione ATEX
+   - Sistemi di isolamento energetico
+
+IMPORTANTE: Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
+NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
 
 Fornisci analisi strutturata in JSON con:
 - confined_space_classification: classificazione spazio (confinato/non_confinato/dubbio)
 - atmospheric_hazards: pericoli atmosferici identificati
 - physical_hazards: pericoli fisici del sito
-- required_procedures: procedure obbligatorie DPR 177/2011
-- safety_equipment: attrezzature di sicurezza necessarie
-- required_dpi: DPI specifici per spazi confinati
-- recommendations: array raccomandazioni prioritarie (max 8, evita duplicazioni)
+- required_procedures: procedure che devono essere PREDISPOSTE prima dell'inizio
+- safety_equipment: attrezzature di sicurezza che devono essere FORNITE prima dell'inizio
+- required_technical_systems: sistemi tecnici che devono essere INSTALLATI prima dell'inizio
+- recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per prerequisiti da soddisfare prima dell'approvazione (max 8)
+
+IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori. La criticality indica il livello di rischio:
+- "alta": Rischi con alta probabilità E alta gravità (asfissia immediata, atmosfere IDLH, intrappolamento)
+- "media": Rischi con media probabilità O media gravità (atmosfere impoverite O2, gas tossici, procedure LOTO)
+- "bassa": Rischi con bassa probabilità E bassa gravità (ventilazione insufficiente, comunicazioni limitate)
 """
 
         # Get AI analysis
@@ -258,7 +268,7 @@ Fornisci analisi strutturata in JSON con:
             "permits_required": ["Confined Space Entry Permit", "LOTO Permit"] if is_confined_space else [],
             "training_requirements": [
                 "Formazione specifica spazi confinati (16 ore minimo)",
-                "Addestramento uso DPI III categoria",
+                "Addestramento uso sistemi di protezione III categoria",
                 "Training procedure emergenza e recupero"
             ] if is_confined_space else [],
             "emergency_measures": [

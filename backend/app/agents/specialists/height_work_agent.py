@@ -68,26 +68,23 @@ SISTEMI DI PROTEZIONE GERARCHICI:
 REQUISITI OBBLIGATORI:
 - Valutazione rischi specifica per quota
 - Formazione specifica lavoratori (min 8 ore)
-- Addestramento pratico uso DPI anticaduta
 - Sorveglianza sanitaria specifica
 - Piano di emergenza e recupero
-- Verifica giornaliera DPI e ancoraggi
+- Verifica giornaliera sistemi di ancoraggio
 
 CRITERI DI STOP LAVORI:
 ✗ Vento > 60 km/h
 ✗ Temporali in arrivo
 ✗ Visibilità insufficiente
 ✗ Ghiaccio su superfici
-✗ DPI danneggiati/non conformi
+✗ Sistemi anticaduta danneggiati/non conformi
 ✗ Assenza supervisore formato
 
-DPI SPECIFICI LAVORI IN QUOTA:
-- Imbracatura anticaduta EN 361 (punto attacco dorsale/sternale)
-- Doppio cordino con assorbitore energia EN 355
-- Dispositivo retrattile EN 360 per movimenti
-- Elmetto con sottogola EN 397/EN 12492
-- Scarpe antiscivolo con suola antiperforazione
-- Guanti grip per presa sicura
+SISTEMI TECNICI LAVORI IN QUOTA:
+- Sistemi di ancoraggio fissi conformi EN 795
+- Dispositivi di ancoraggio temporanei certificati
+- Dispositivi retrattili per movimenti
+- Reti di protezione anticaduta quando applicabili
 - Kit evacuazione/recupero
 """
     
@@ -116,37 +113,47 @@ DPI SPECIFICI LAVORI IN QUOTA:
         
         # Create AI analysis prompt
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI LAVORI IN QUOTA:
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE - LAVORI IN QUOTA:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
 
-DPI ATTUALMENTE PREVISTI:
-{existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+DISPOSITIVI DI PROTEZIONE PREVISTI NEL PERMESSO:
+{existing_dpi if existing_dpi else 'Nessun dispositivo specificato'}
 
-AZIONI MITIGAZIONE RISCHI ATTUALI:
+AZIONI MITIGAZIONE RISCHI PREVISTE:
 {existing_actions if existing_actions else 'Nessuna azione specificata'}
+
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
 
 ANALIZZA IL SEGUENTE:
 1. Questo lavoro comporta rischi di lavori in quota (>2 metri)?
 2. Quali sono i rischi specifici identificati (caduta, oggetti, meteo, ecc.)?
-3. Le attuali DPI sono adeguate per i rischi in quota identificati?
-4. Le attuali azioni di mitigazione sono sufficienti?
-5. Quali DPI aggiuntive sono necessarie (imbracature, cordini, elmetti, ecc.)?
-6. Quali procedure di sicurezza mancano?
+3. Le attuali azioni di mitigazione sono sufficienti?
+4. Quali sistemi tecnici di protezione devono essere INSTALLATI prima dell'inizio?
+5. Quali procedure di sicurezza devono essere PREDISPOSTE?
+
+IMPORTANTE: Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
+NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
 
 Fornisci risposta strutturata in JSON con:
 - height_work_detected: boolean
 - risk_level: "basso|medio|alto|critico"
 - specific_risks: array di oggetti con type, description, severity
-- existing_dpi_adequacy: "adeguata|inadeguata|parziale"
 - existing_actions_adequacy: "adeguate|inadeguate|parziali"
-- missing_dpi: array di DPI mancanti con standard EN
-- missing_controls: array di procedure/controlli mancanti
-- recommendations: array di raccomandazioni prioritarie (max 8, non duplicate)
+- required_technical_systems: array di sistemi tecnici che devono essere INSTALLATI prima dell'inizio
+- missing_controls: array di procedure/controlli che devono essere PREDISPOSTI prima dell'inizio
+- recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per prerequisiti da soddisfare prima dell'approvazione (max 8)
+
+IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori. La criticality indica il livello di rischio:
+- "alta": Rischi con alta probabilità E alta gravità (pericolo immediato per la vita)
+- "media": Rischi con media probabilità O media gravità (potenziali infortuni gravi)
+- "bassa": Rischi con bassa probabilità E bassa gravità (infortuni lievi o near miss)
         """
         
         # Get AI analysis
@@ -196,15 +203,11 @@ Fornisci risposta strutturata in JSON con:
                 "risks_identified": risks_identified,
                 "recommended_actions": ai_analysis.get("recommendations", []),
                 "existing_measures_evaluation": {
-                    "existing_dpi": existing_dpi,
                     "existing_actions": existing_actions,
-                    "dpi_adequacy": ai_analysis.get("existing_dpi_adequacy", "da_valutare").upper(),
                     "actions_adequacy": ai_analysis.get("existing_actions_adequacy", "da_valutare").upper(),
                     "ai_assessment": ai_analysis.get("recommendations", []),
                     "risk_level": ai_analysis.get("risk_level", "medio"),
-                    "critical_gaps": {
-                        "missing_dpi": len(ai_analysis.get("missing_dpi", []))
-                    }
+                    "required_systems": ai_analysis.get("required_technical_systems", [])
                 },
                 "permits_required": ["Permesso Lavori in Quota"] if height_work_detected else [],
                 "ai_recommendations": ai_analysis.get("recommendations", []),

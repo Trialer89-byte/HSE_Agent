@@ -117,15 +117,19 @@ REQUISITI QUALIFICAZIONE:
         
         # Create intelligent AI analysis prompt with gap detection
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI SICUREZZA ELETTRICA:
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE - SICUREZZA ELETTRICA:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
 
-AZIONI GIÀ PRESENTI NEL PERMESSO: {existing_actions}
+AZIONI PREVISTE NEL PERMESSO: {existing_actions}
+
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
 
 ANALIZZA COMPLETAMENTE I RISCHI ELETTRICI secondo CEI 11-27, CEI EN 50110 e D.Lgs 81/08:
 
@@ -177,9 +181,12 @@ ANALIZZA COMPLETAMENTE I RISCHI ELETTRICI secondo CEI 11-27, CEI EN 50110 e D.Lg
    - Verifica conformità e suggerisci miglioramenti specifici
    - Identifica step mancanti nelle procedure esistenti
 
-5. RACCOMANDAZIONI BASATE SU TENSIONE:
-   - BT: Sezionamento + verifica tensione + qualifiche PES/PAV
-   - MT/AT: LOTO completo + PES/PAV + messa a terra + procedure avanzate
+5. RACCOMANDAZIONI - PREREQUISITI PRE-AUTORIZZAZIONE:
+   Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
+   NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
+
+   - BT: Sezionamento da PREDISPORRE + verifica tensione da ESEGUIRE + qualifiche PES/PAV da VERIFICARE
+   - MT/AT: LOTO da IMPLEMENTARE + PES/PAV da VERIFICARE + messa a terra da INSTALLARE + procedure da PREDISPORRE
 
 IMPORTANTE: Fornisci risposta ESCLUSIVAMENTE in formato JSON valido, senza testo aggiuntivo:
 
@@ -189,7 +196,7 @@ IMPORTANTE: Fornisci risposta ESCLUSIVAMENTE in formato JSON valido, senza testo
   "required_qualifications": ["lista qualifiche: PES/PAV/PEI"],
   "safety_procedures": ["lista procedure obbligatorie solo se mancanti"],
   "gap_analysis": ["lista analisi gap nelle azioni esistenti"],
-  "intelligent_recommendations": ["lista raccomandazioni specifiche per gap"],
+  "intelligent_recommendations": [{{"action": "descrizione azione", "criticality": "alta|media|bassa"}}],
   "electrical_context_for_dpi": {{
     "voltage_level": "stesso valore di voltage_level",
     "electrical_risks": ["rischi per DPI specialist"],
@@ -205,6 +212,12 @@ REGOLE FORMATO:
 - I campi con "lista" devono essere array, anche se vuoti
 - electrical_context_for_dpi deve essere oggetto vuoto o con dati
 - voltage_level deve essere esattamente: BT, MT, AT, unknown, o none
+- intelligent_recommendations deve essere array di oggetti con formato {{"action": "descrizione", "criticality": "alta|media|bassa"}}
+- CRITICALITY LEVELS basate su probabilità e gravità del rischio:
+  * "alta": Rischi con alta probabilità E alta gravità (elettrocuzione imminente, arco elettrico, lavori sotto tensione)
+  * "media": Rischi con media probabilità O media gravità (lavori BT senza LOTO, qualifiche PES/PAV mancanti)
+  * "bassa": Rischi con bassa probabilità E bassa gravità (procedure incomplete, verifiche strumentali)
+- IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori
 - Non aggiungere testo prima o dopo il JSON
 """
         
@@ -329,22 +342,38 @@ REGOLE FORMATO:
         
         # Convert AI recommendations to structured format
         for rec in intelligent_recs:
-            if isinstance(rec, str) and rec.strip():
+            if isinstance(rec, dict) and rec.get("action"):
+                recommendations.append({
+                    "id": action_id,
+                    "action": rec.get("action"),
+                    "criticality": rec.get("criticality", "media"),
+                    "type": "electrical_gap_filling"
+                })
+                action_id += 1
+            elif isinstance(rec, str) and rec.strip():
                 recommendations.append({
                     "id": action_id,
                     "action": rec,
-                    "criticality": "alta",
+                    "criticality": "media",
                     "type": "electrical_gap_filling"
                 })
                 action_id += 1
         
         # Add safety procedures that are missing
         for proc in safety_procedures:
-            if isinstance(proc, str) and proc.strip():
+            if isinstance(proc, dict) and proc.get("action"):
+                recommendations.append({
+                    "id": action_id,
+                    "action": proc.get("action"),
+                    "criticality": proc.get("criticality", "alta"),
+                    "type": "electrical_procedure"
+                })
+                action_id += 1
+            elif isinstance(proc, str) and proc.strip():
                 recommendations.append({
                     "id": action_id,
                     "action": proc,
-                    "criticality": "critica" if "loto" in proc.lower() or "tensione" in proc.lower() else "alta",
+                    "criticality": "alta",
                     "type": "electrical_procedure"
                 })
                 action_id += 1
@@ -352,9 +381,19 @@ REGOLE FORMATO:
         # Add gap analysis findings (only if not already covered by other recommendations)
         existing_actions_text = " ".join([rec.get("action", "").lower() for rec in recommendations])
         for gap in gap_analysis:
-            if isinstance(gap, str) and gap.strip():
+            if isinstance(gap, dict) and gap.get("action"):
+                gap_text = gap.get("action", "")
+                gap_lower = gap_text.lower()
+                if not any(keyword in existing_actions_text for keyword in ["loto", "lockout", "isolamento", "sezionamento"] if keyword in gap_lower):
+                    recommendations.append({
+                        "id": action_id,
+                        "action": f"Colmare lacuna identificata: {gap_text}",
+                        "criticality": gap.get("criticality", "media"),
+                        "type": "electrical_gap_analysis"
+                    })
+                    action_id += 1
+            elif isinstance(gap, str) and gap.strip():
                 gap_lower = gap.lower()
-                # Skip if similar action already exists
                 if not any(keyword in existing_actions_text for keyword in ["loto", "lockout", "isolamento", "sezionamento"] if keyword in gap_lower):
                     recommendations.append({
                         "id": action_id,

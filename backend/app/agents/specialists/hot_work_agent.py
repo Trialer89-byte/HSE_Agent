@@ -25,7 +25,7 @@ COMPETENZE SPECIALISTICHE:
 - Saldatura, taglio termico, brasatura
 - Atmosfere esplosive e zone ATEX
 - Fire Watch e sistemi rilevazione
-- DPI per operazioni a caldo
+- Sistemi spegnimento fissi/portatili
 - Procedure emergenza incendio
 
 TIPOLOGIE LAVORI A CALDO:
@@ -69,13 +69,11 @@ CONTROLLI CRITICI HOT WORK:
 ✓ Ventilazione adeguata/LEV
 ✓ Delimitazione area sicurezza
 
-DPI LAVORI A CALDO:
-- Maschera saldatura DIN 9-14
-- Indumenti ignifughi EN 11611/11612
-- Guanti saldatore EN 12477
-- Scarpe antiscivolo resistenti calore
-- Protezione vie respiratorie per fumi
-- Grembiuli/ghette in cuoio
+ATTREZZATURE TECNICHE LAVORI A CALDO:
+- Sistemi di ventilazione localizzata (LEV)
+- Rilevatori gas/vapori esplosivi
+- Estintori specifici per tipo di combustibile
+- Schermi protettivi per contenimento scintille
 
 FIRE WATCH REQUIREMENTS:
 - Formazione antincendio specifica
@@ -118,27 +116,33 @@ CRITERI STOP LAVORI CALDI:
 
         # Create AI analysis prompt
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI LAVORI A CALDO:
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE - LAVORI A CALDO:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
 
-DPI ATTUALMENTE PREVISTI:
-{existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+DISPOSITIVI DI PROTEZIONE PREVISTI NEL PERMESSO:
+{existing_dpi if existing_dpi else 'Nessun dispositivo specificato'}
 
-AZIONI MITIGAZIONE RISCHI ATTUALI:
+AZIONI MITIGAZIONE RISCHI PREVISTE:
 {existing_actions if existing_actions else 'Nessuna azione specificata'}
+
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
 
 ANALIZZA I SEGUENTI ASPETTI:
 1. Questo lavoro comporta operazioni a caldo (saldatura, taglio, fiamme)?
 2. Quali sono i rischi specifici (incendio, esplosione, fumi, radiazioni)?
-3. Le attuali DPI sono adeguate per i rischi identificati?
-4. Le attuali azioni di mitigazione sono sufficienti?
-5. Quali controlli critici mancano (Fire Watch, Hot Work Permit, ecc.)?
-6. Quali sono le procedure di emergenza necessarie?
+3. Le attuali azioni di mitigazione sono sufficienti?
+4. Quali controlli critici devono essere PREDISPOSTI (Fire Watch, Hot Work Permit, ecc.)?
+5. Quali procedure di emergenza devono essere PREDISPOSTE?
+
+IMPORTANTE: Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
+NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
 
 Fornisci risposta strutturata in JSON con:
 - hot_work_detected: boolean
@@ -147,7 +151,12 @@ Fornisci risposta strutturata in JSON con:
 - specific_risks: array di oggetti con type, description, severity
 - missing_controls: array controlli di sicurezza mancanti
 - fire_prevention_measures: array misure prevenzione incendi
-- recommendations: array raccomandazioni prioritarie (max 8, evita duplicazioni)
+- recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per prerequisiti da soddisfare prima dell'approvazione (max 8)
+
+IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori. La criticality indica il livello di rischio:
+- "alta": Rischi con alta probabilità E alta gravità (incendio/esplosione imminente, atmosfere esplosive)
+- "media": Rischi con media probabilità O media gravità (Hot Work senza adeguati controlli, Fire Watch)
+- "bassa": Rischi con bassa probabilità E bassa gravità (ventilazione insufficiente, procedure incomplete)
         """
 
         # Get AI analysis
@@ -201,17 +210,13 @@ Fornisci risposta strutturata in JSON con:
                 "risks_identified": risks_identified,
                 "recommended_actions": recommended_actions,
                 "existing_measures_evaluation": {
-                    "existing_dpi": existing_dpi,
                     "existing_actions": existing_actions,
-                    "dpi_adequacy": ai_analysis.get("existing_dpi_adequacy", "da_valutare").upper(),
                     "actions_adequacy": ai_analysis.get("existing_actions_adequacy", "da_valutare").upper(),
                     "ai_assessment": ai_analysis.get("recommendations", []),
                     "risk_level": ai_analysis.get("risk_level", "alto"),
                     "work_type_detected": ai_analysis.get("work_type", "altro"),
                     "location_hazards": ai_analysis.get("location_hazards", []),
-                    "critical_gaps": {
-                        "missing_dpi": len(ai_analysis.get("missing_dpi", []))
-                    }
+                    "missing_controls": ai_analysis.get("missing_controls", [])
                 },
                 "fire_prevention_measures": ai_analysis.get("fire_prevention_measures", []),
                 "permits_required": ["Hot Work Permit"] if hot_work_detected else [],

@@ -784,10 +784,11 @@ class AdvancedHSEOrchestrator:
         action_items = []
         item_id = 1
         
-        # Priority actions from consolidation
+        # Priority actions from consolidation - use AI-generated criticality
         for action_item in coherent_actions:
-            priority = "alta" if action_item.get("type") == "consolidated_recommendation" else "media"
-            
+            # Trust AI-generated criticality from specialists, no hardcoded overrides
+            priority = action_item.get("priority", "media")  # Keep original priority from specialists
+
             action_items.append({
                 "id": f"ACT_{item_id:03d}",
                 "type": "consolidated_action",
@@ -798,13 +799,14 @@ class AdvancedHSEOrchestrator:
             })
             item_id += 1
         
-        # Compatible DPI requirements
+        # Compatible DPI requirements - use AI-generated priority
         for dpi_item in compatible_dpi:
-            priority = "critica" if dpi_item.get("type") == "compatibility_resolved" else "alta"
-            
+            # Trust DPI specialist analysis, no hardcoded priority overrides
+            priority = dpi_item.get("priority", "alta")  # DPI is generally high priority
+
             action_items.append({
                 "id": f"ACT_{item_id:03d}",
-                "type": "consolidated_dpi", 
+                "type": "consolidated_dpi",
                 "priority": priority,
                 "action": f"Fornire DPI: {str(dpi_item['item'])}",
                 "source": dpi_item.get('source', 'Multiple specialists'),
@@ -818,58 +820,31 @@ class AdvancedHSEOrchestrator:
         return action_items
     
     def _create_prioritized_actions(
-        self, 
-        coherent_actions: List[Dict], 
-        compatible_dpi: List[Dict], 
+        self,
+        coherent_actions: List[Dict],
+        compatible_dpi: List[Dict],
         classification: Dict[str, Any]
     ) -> Dict[str, List[Dict]]:
         """
-        Crea una lista di azioni divise per priorità (alta, media, bassa)
-        con citazioni documentali quando disponibili
+        Crea una lista di azioni divise per priorità basata su AI-generated criticality
+        Trust specialists' AI analysis instead of hardcoded rules
         """
         prioritized = {
             "alta": [],
-            "media": [],  
+            "media": [],
             "bassa": []
         }
-        
-        # Criteri di prioritizzazione using risk mapping results
-        critical_risks = ["hot_work", "confined_space", "electrical", "height"]
-        has_critical_risks = False
-        
-        if classification.get("risk_mapping"):
-            detected_risks = classification["risk_mapping"].get("detected_risks", {})
-            risk_combinations = classification["risk_mapping"].get("risk_combinations", [])
-            
-            # Check for critical risks with high confidence
-            has_critical_risks = any(
-                risk in critical_risks and risk_data.get("confidence", 0) > 0.5
-                for risk, risk_data in detected_risks.items()
-            )
-            
-            # Also check for critical combinations
-            has_critical_risks = has_critical_risks or any(
-                combo.get("severity") == "critical" for combo in risk_combinations
-            )
-        
+
         action_id = 1
-        
-        # Processa azioni consolidate
+
+        # Process consolidated actions - trust AI-generated priority
         for action_item in coherent_actions:
             action_text = str(action_item.get("action", ""))
             source = action_item.get("source", "")
-            
-            # Determina priorità basata su contenuto e rischi
-            priority = "media"  # default
-            
-            if (has_critical_risks and 
-                any(critical_word in action_text.lower() for critical_word in 
-                    ["lockout", "isolamento", "ventilazione", "atmosfera", "gas test", "sorveglianza"])):
-                priority = "alta"
-            elif any(low_priority in action_text.lower() for low_priority in 
-                     ["documentazione", "registrazione", "comunicazione", "training"]):
-                priority = "bassa"
-            
+
+            # Use AI-generated priority from specialists, no hardcoded overrides
+            priority = action_item.get("priority", "media")
+
             prioritized[priority].append({
                 "id": f"PA_{action_id:03d}",
                 "action": action_text,
@@ -877,8 +852,8 @@ class AdvancedHSEOrchestrator:
                 "category": self._identify_risk_area(action_text)
             })
             action_id += 1
-        
-        # Aggiungi azioni specifiche per completezza permesso se necessario
+
+        # Add actions for permit completeness if necessary (keep as alta since these are critical gaps)
         completeness_score = classification.get('permit_completeness', {}).get('score', 10)
         if completeness_score < 8:
             missing_elements = classification.get('permit_completeness', {}).get('missing_elements', [])
@@ -890,8 +865,8 @@ class AdvancedHSEOrchestrator:
                     "category": "documentale"
                 })
                 action_id += 1
-        
-        # Aggiungi azioni specifiche per lavori NON ricorrenti (maggiore attenzione)
+
+        # Add actions for non-recurrent work (keep as alta since these require extra attention)
         recurrence_info = classification.get("permit_metadata", {}).get("recurrence_analysis")
         if recurrence_info and not recurrence_info.get("is_recurrent", True):
             prioritized["alta"].append({
@@ -901,9 +876,32 @@ class AdvancedHSEOrchestrator:
                 "category": "risk_management"
             })
             action_id += 1
-        
+
         return prioritized
-    
+
+    def _convert_criticality_to_priority(self, criticality: str) -> str:
+        """
+        Convert AI-generated criticality to frontend priority
+        Maps criticality levels from specialists to frontend display priorities
+        """
+        if not criticality:
+            return "media"
+
+        criticality_lower = str(criticality).lower()
+
+        # Map criticality to priority - both English and Italian terms supported
+        if criticality_lower in ["critica", "critical"]:
+            return "alta"
+        elif criticality_lower in ["alta", "high"]:
+            return "alta"
+        elif criticality_lower in ["media", "medium"]:
+            return "media"
+        elif criticality_lower in ["bassa", "low"]:
+            return "bassa"
+        else:
+            # Default fallback
+            return "media"
+
     def _create_dpi_modifications(
         self,
         compatible_dpi: List[Dict],
@@ -927,12 +925,15 @@ class AdvancedHSEOrchestrator:
             # Determina se è aggiunta o modifica
             is_modification = (dpi_item.get("type") == "compatibility_resolved" or
                              "multi-protezione" in dpi_text.lower())
-            
+
+            # Use AI-generated priority from DPI specialist
+            priority = dpi_item.get("priority", "alta")  # DPI is generally high priority if not specified
+
             dpi_entry = {
                 "item": dpi_text,
                 "source": source,
                 "citation": self._find_dpi_citation(dpi_text, classification),
-                "priority": "critica" if is_modification else "alta",
+                "priority": priority,
                 "justification": self._get_dpi_justification(dpi_text, classification),
                 "category": self._categorize_dpi(dpi_text)
             }
@@ -1361,24 +1362,28 @@ class AdvancedHSEOrchestrator:
                             "category": action_item.get("category", "safety_control")
                         })
                     else:
-                        # Handle string actions
+                        # Handle string actions (fallback - specialists should return structured objects)
                         all_action_items.append({
                             "id": f"ACT_{item_id:03d}",
                             "type": "control_measure",
-                            "priority": "media",
+                            "priority": "media",  # Default only for string fallback
                             "action": str(action_item),
                             "source": specialist_name,
                             "category": "safety_control"
                         })
                     item_id += 1
                 
-                # Convert DPI requirements to action items  
+                # Convert DPI requirements to action items
                 for dpi in dpi_requirements:
+                    # DPI requirements should come from DPI specialist with proper priority
+                    dpi_priority = dpi.get("priority", "alta") if isinstance(dpi, dict) else "alta"
+                    dpi_text = dpi.get("item", str(dpi)) if isinstance(dpi, dict) else str(dpi)
+
                     all_action_items.append({
                         "id": f"DPI_{item_id:03d}",
                         "type": "dpi_requirement",
-                        "priority": "alta",
-                        "action": f"Fornire e utilizzare {str(dpi)}",
+                        "priority": dpi_priority,
+                        "action": f"Fornire e utilizzare {dpi_text}",
                         "source": specialist_name,
                         "category": "dpi_safety"
                     })
@@ -1537,17 +1542,16 @@ class AdvancedHSEOrchestrator:
                 {
                     "id": i + 1,
                     "type": "safety_action",
-                    "priority": action.get("priority", "medium"),
+                    "priority": self._convert_criticality_to_priority(action.get("criticality", action.get("priority", "media"))),
                     "suggested_action": action.get("action", str(action)),
                     "category": action.get("category", "general"),
                     "timeline": action.get("timeline", "Da definire"),
                     "responsible": action.get("responsible", "Da assegnare"),
                     "status": action.get("status", "planned"),
-                    "references": [],
                     "frontend_display": {
-                        "icon": "⚠️" if action.get("priority") == "high" else "📋",
-                        "color": "red" if action.get("priority") == "high" else "blue",
-                        "category": action.get("category", "general")
+                        "icon": "⚠️" if self._convert_criticality_to_priority(action.get("criticality", action.get("priority", "media"))) == "alta" else "📋",
+                        "category_name": action.get("source", "General")
+                        # Removed urgency field - all actions are pre-work
                     }
                 }
                 for i, action in enumerate(consolidated_actions)
@@ -1621,19 +1625,25 @@ class AdvancedHSEOrchestrator:
                 print(f"[AdvancedOrchestrator] {specialist_name}: {len(recommended_actions)} actions")
                 
                 for action in recommended_actions:
-                    action_text = str(action) if not isinstance(action, dict) else action.get("action", str(action))
+                    if isinstance(action, dict):
+                        action_text = action.get("action", str(action))
+                        criticality = action.get("criticality", "media")
+                        priority = self._convert_criticality_to_priority(criticality)
+                    else:
+                        action_text = str(action)
+                        priority = "media"  # Fallback for string actions
+
                     all_actions.append({
                         "id": action_id,
                         "type": "safety_action",
-                        "priority": "medium",
+                        "priority": priority,
                         "suggested_action": action_text,
                         "category": specialist_name.lower(),
                         "source": specialist_name,
-                        "references": [],
                         "frontend_display": {
-                            "icon": "⚠️",
-                            "category_name": specialist_name.replace("_", " ").title(),
-                            "urgency": "normal"
+                            "icon": "⚠️" if priority == "alta" else "📋",
+                            "category_name": specialist_name.replace("_", " ").title()
+                            # Removed urgency field as requested
                         }
                     })
                     action_id += 1

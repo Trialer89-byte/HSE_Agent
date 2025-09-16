@@ -18,6 +18,7 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
     # Extended Fields
     work_type = Column(String(100))
     location = Column(String(255))
+    equipment = Column(JSON, default=[])
     risk_level = Column(String(20), default="medium")
     start_date = Column(DateTime)
     end_date = Column(DateTime)
@@ -45,6 +46,7 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
     
     # Extensibility
     attachments = Column(JSON, default=[])
+    custom_fields = Column(JSON, default={})
     
     # Relationships
     tenant = relationship("Tenant", back_populates="work_permits")
@@ -71,9 +73,11 @@ class WorkPermit(Base, TimestampMixin, TenantMixin):
             "dpi_required": self.dpi_required,
             "work_type": self.work_type,
             "location": self.location,
+            "equipment": self.equipment,
             "duration_hours": self.duration_hours,  # Now calculated property
             "risk_level": self.risk_level,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
-            "risk_mitigation_actions": self.risk_mitigation_actions
+            "risk_mitigation_actions": self.risk_mitigation_actions,
+            "custom_fields": self.custom_fields
         }

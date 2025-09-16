@@ -76,10 +76,9 @@ GERARCHIA CONTROLLI CHIMICI:
    - Procedure operative
    - Formazione specifica
    - Rotazione personale
-5. DPI (ultima risorsa):
-   - Protezione vie respiratorie
-   - Indumenti chimici
-   - Protezione occhi/viso
+5. CONTROLLI FINALI:
+   - Segnalazione e delimitazione aree
+   - Comunicazioni di emergenza
 
 VENTILAZIONE MINIMA:
 - Generale: 4-6 ricambi/ora
@@ -93,12 +92,11 @@ MONITORAGGIO ESPOSIZIONE:
 - TLV-C: Ceiling, mai superare
 - IDLH: Immediatamente pericoloso
 
-DPI CHIMICI SPECIFICI:
-- Respiratori: Filtri A (organici), B (inorganici), E (acidi), K (ammoniaca), P (polveri)
-- SCBA per IDLH o O2<19.5%
-- Tute chimiche: Tipo 1 (gas), 3 (liquidi), 4 (spray), 5 (polveri), 6 (schizzi)
-- Guanti: Materiale secondo permeazione chimica
-- Occhiali/visiera: Tenuta stagna per vapori
+STRUMENTAZIONE CHIMICA SPECIFICA:
+- Rilevatori gas/vapori portatili e fissi
+- Analizzatori atmosfera (O2, LEL, gas tossici)
+- Strumentazione ATEX certificata
+- Sistemi di allarme per superamento TLV
 """
     
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -123,13 +121,17 @@ DPI CHIMICI SPECIFICI:
         
         # Create comprehensive AI analysis prompt
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI RISCHI CHIMICI E ATEX:
+ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
+IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
 
+PERMESSO DA ANALIZZARE:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
 TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
 UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+
+CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
 
 ANALIZZA COMPLETAMENTE I RISCHI CHIMICI E ATMOSFERE ESPLOSIVE secondo:
 - Regolamento CLP (CE 1272/2008)
@@ -160,41 +162,47 @@ ANALIZZA COMPLETAMENTE I RISCHI CHIMICI E ATMOSFERE ESPLOSIVE secondo:
    - Vie di esposizione (inalazione/cutanea/orale)
 
 4. CONTROLLI DI SICUREZZA:
-   - Gerarchia controlli (eliminazione → sostituzione → controlli tecnici → DPI)
+   - Gerarchia controlli (eliminazione → sostituzione → controlli tecnici → amministrativi)
    - Ventilazione generale/locale (LEV)
    - Monitoraggio continuo atmosfera
    - Sistemi rilevazione gas/vapori
    - Procedure di bonifica
 
-5. DPI CHIMICI/ATEX:
-   - Protezione respiratoria (filtri A/B/E/K/P, SCBA)
-   - Indumenti chimici (Tipo 1-6)
-   - Guanti resistenti permeazione chimica
-   - Equipaggiamenti antistatici per ATEX
+5. EQUIPAGGIAMENTI TECNICI SPECIFICI:
    - Strumentazione certificata ATEX
+   - Sistemi di rilevazione gas continui
+   - Equipaggiamenti antistatici per ATEX
 
 IMPORTANTE: Concentrati SPECIFICAMENTE su questo permesso di lavoro e le sue caratteristiche uniche.
-Non fornire raccomandazioni generiche - ogni azione deve essere pertinente al lavoro descritto.
+CONTESTO OPERATIVO: Il lavoro NON È ANCORA INIZIATO - stai valutando un permesso in fase di PRE-AUTORIZZAZIONE.
+
+Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
+NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
 
 Fornisci analisi strutturata in JSON con:
-- chemical_substances_identified: sostanze chimiche SPECIFICHE rilevate in questo lavoro
+- chemical_substances_identified: sostanze chimiche SPECIFICHE rilevate in questo lavoro pianificato
 - identified_risks: array di oggetti rischi con {{type, description, severity}} SPECIFICI per questo lavoro
 - risk_classification: classificazione complessiva (es. "RISCHIO CHIMICO", "RISCHIO CHIMICO + ATEX")
-- atex_risk_assessment: valutazione rischio esplosione SPECIFICA per questo lavoro
+- atex_risk_assessment: valutazione rischio esplosione SPECIFICA per questo lavoro pianificato
 - health_hazards: rischi per la salute SPECIFICI di questo lavoro
-- required_controls: controlli di sicurezza SPECIFICI necessari per questo lavoro
-- monitoring_requirements: monitoraggi SPECIFICI richiesti per questo tipo di lavoro
-- required_dpi: DPI chimici/ATEX SPECIFICI per le sostanze e rischi identificati
-- required_permits: permessi SPECIFICI necessari per questo lavoro chimico/ATEX
-- training_requirements: formazione SPECIFICA per i rischi chimici di questo lavoro
-- emergency_procedures: procedure emergenza SPECIFICHE per questo lavoro chimico
-- recommendations: raccomandazioni PRIORITARIE specifiche (max 6, evita duplicazioni con altre sezioni)
-- ai_specific_recommendations: osservazioni aggiuntive specifiche dell'AI per questo permesso
+- required_controls: controlli di sicurezza che devono essere PREDISPOSTI prima dell'inizio
+- monitoring_requirements: sistemi di monitoraggio da INSTALLARE/ATTIVARE prima del lavoro
+- required_permits: permessi aggiuntivi da OTTENERE prima dell'autorizzazione
+- training_requirements: formazione che deve essere COMPLETATA prima dell'inizio
+- emergency_procedures: procedure emergenza che devono essere PREDISPOSTE
+- recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per prerequisiti da soddisfare prima dell'approvazione (max 6)
+
+IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori. La criticality indica il livello di rischio:
+- "alta": Rischi con alta probabilità E alta gravità (pericolo immediato per la vita, ATEX, agenti CMR)
+- "media": Rischi con media probabilità O media gravità (esposizione sostanze tossiche, atmosfere pericolose)
+- "bassa": Rischi con bassa probabilità E bassa gravità (irritazioni, esposizioni minori)
+- ai_specific_recommendations: osservazioni specifiche su preparazione e prerequisiti
 
 EVITA ASSOLUTAMENTE:
+- Suggerimenti di "sospendere" o "interrompere" (il lavoro non è ancora iniziato)
 - Raccomandazioni generiche applicabili a qualsiasi lavoro
 - Duplicazioni tra sezioni diverse
-- Riferimenti vaghi - specifica sempre il collegamento al lavoro in corso
+- Riferimenti a lavoro "in corso" - usa "pianificato" o "da eseguire"
 """
         
         # Get AI analysis

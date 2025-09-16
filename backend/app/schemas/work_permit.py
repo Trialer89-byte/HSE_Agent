@@ -9,10 +9,25 @@ class WorkPermitBase(BaseModel):
     dpi_required: List[str] = Field(default=[], description="DPI richiesti", example=["Guanti isolanti Classe 2", "Elmetto dielettrico", "Calzature isolanti"])
     work_type: Optional[str] = Field(None, description="Tipo di lavoro", example="elettrico")
     location: Optional[str] = Field(None, description="Ubicazione del lavoro", example="Cabina elettrica MT - Stabilimento A")
+    equipment: List[str] = Field(default=[], description="Attrezzature utilizzate", example=["Multimetro", "Pinze amperometriche", "Tester isolamento"])
     risk_level: str = Field(default="medium", description="Livello di rischio", example="high")
     start_date: Optional[datetime] = Field(None, description="Data di inizio lavoro")
     end_date: Optional[datetime] = Field(None, description="Data di fine lavoro")
     risk_mitigation_actions: List[str] = Field(default=[], description="Azioni di mitigazione dei rischi", example=["Procedura LOTO", "Verifica assenza tensione", "Coordinamento con sala controllo"])
+    custom_fields: Optional[Dict[str, Any]] = Field(default={}, description="Campi personalizzati")
+
+    @validator('equipment', pre=True)
+    def validate_equipment(cls, v):
+        if isinstance(v, str):
+            # Handle string input by splitting on commas
+            if v.strip():
+                return [item.strip() for item in v.split(',') if item.strip()]
+            else:
+                return []
+        elif isinstance(v, list):
+            return v
+        else:
+            return []
 
     @validator('risk_mitigation_actions', pre=True)
     def validate_risk_mitigation_actions(cls, v):
@@ -53,10 +68,12 @@ class WorkPermitUpdate(BaseModel):
     dpi_required: Optional[List[str]] = None
     work_type: Optional[str] = None
     location: Optional[str] = None
+    equipment: Optional[List[str]] = None
     risk_level: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     risk_mitigation_actions: Optional[List[str]] = None
+    custom_fields: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
     is_active: Optional[bool] = None
     valid_from: Optional[datetime] = None
@@ -84,10 +101,10 @@ class WorkPermitResponse(WorkPermitBase):
     analyzed_at: Optional[datetime]
     valid_from: Optional[datetime]
     valid_until: Optional[datetime]
-    
+
     # Computed fields
     duration_hours: int = Field(0, description="Durata calcolata in ore (end_date - start_date)")
-    
+
     # AI Analysis Results
     ai_analysis: Optional[Dict[str, Any]] = None
     action_items: Optional[List[Dict[str, Any]]] = None
@@ -101,7 +118,6 @@ class ActionItem(BaseModel):
     type: str = Field(..., description="Tipo di action item")
     priority: str = Field(..., description="Priorità: alta, media, bassa")
     suggested_action: str = Field(..., description="Azione suggerita")
-    references: List[str] = Field(default=[], description="Riferimenti normativi")
     frontend_display: Dict[str, str] = Field(..., description="Configurazione display frontend")
 
 
@@ -159,6 +175,7 @@ class PermitPreviewAnalysisRequest(BaseModel):
     description: str = Field(..., description="Descrizione dettagliata del lavoro", example="Sostituzione girante pompa P-001 e verifica tenute meccaniche")
     work_type: str = Field(..., description="Tipo di lavoro", example="meccanico")
     location: Optional[str] = Field(None, description="Ubicazione del lavoro", example="Sala pompe - Area produzione")
+    equipment: Optional[List[str]] = Field(default=[], description="Attrezzature utilizzate", example=["Chiavi inglesi", "Estrattore cuscinetti", "Torsiometro"])
     risk_level: Optional[str] = Field(None, description="Livello di rischio", example="medio")
     risk_mitigation_actions: Optional[List[str]] = Field(default=[], description="Azioni di mitigazione dei rischi", example=["Isolamento energia", "Drenaggio linea", "Uso DPI specifici"])
     
