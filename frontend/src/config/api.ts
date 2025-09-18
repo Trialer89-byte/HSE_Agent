@@ -69,8 +69,8 @@ apiClient.interceptors.response.use(
 // Helper function for API calls without axios
 export async function apiCall(endpoint: string, options?: RequestInit) {
   // Use longer timeout for document-related and AI analysis endpoints
-  const timeout = endpoint.includes('/documents') || endpoint.includes('/permits') || endpoint.includes('/work-permits') 
-    ? 120000 : 10000; // 2 minutes for documents and permits (AI analysis), 10 seconds for others
+  const timeout = endpoint.includes('/documents') || endpoint.includes('/permits') || endpoint.includes('/work-permits')
+    ? 180000 : 10000; // 3 minutes for documents and permits (AI analysis), 10 seconds for others
   return apiCallWithTimeout(endpoint, options, timeout);
 }
 

@@ -115,110 +115,56 @@ REQUISITI QUALIFICAZIONE:
         # Get existing actions to check for gaps
         existing_actions_text = str(existing_actions).lower() if existing_actions else ""
         
-        # Create intelligent AI analysis prompt with gap detection
+        # Simplified AI analysis prompt maintaining all essential functionality
         permit_summary = f"""
-ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
-IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
+ANALISI PERMESSO ELETTRICO - PRE-AUTORIZZAZIONE
+Permesso NON ANCORA INIZIATO - valuta se approvabile.
 
-PERMESSO DA ANALIZZARE - SICUREZZA ELETTRICA:
+DATI PERMESSO:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
-TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
-UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+AZIONI ESISTENTI: {existing_actions}
 
-AZIONI PREVISTE NEL PERMESSO: {existing_actions}
+ANALISI RICHIESTA (CEI 11-27, CEI EN 50110):
 
-CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
+1. RISCHI ELETTRICI:
+   - Identifica tensioni (BT/MT/AT), elettrocuzione, arco elettrico, incendio
+   - Distingui ATTIVITÀ PRIMARIA (lavoro su impianti) vs ATTREZZATURE (mezzi usati, non sono lo scopo primario del lavoro)
+   - Per le ATTREZZATURE considera i rischi associati al loro utilizzo
 
-ANALIZZA COMPLETAMENTE I RISCHI ELETTRICI secondo CEI 11-27, CEI EN 50110 e D.Lgs 81/08:
+2. CONTROLLI OBBLIGATORI:
+   - LOTO solo per attività su impianti fissi (non attrezzature portatili)
+   - Qualifiche PES/PAV/PEI se richieste per attività
+   - Verifiche tensione, messe a terra
+   - Compatibilità attrezzature con ambiente di lavoro
 
-1. IDENTIFICAZIONE RISCHI ELETTRICI:
-   - Presenza impianti/componenti elettrici
-   - Livello tensione (BT/MT/AT)
-   - Tipo lavoro (manutenzione, installazione, riparazione)
-   - Rischio elettrocuzione (contatto diretto/indiretto)
-   - Rischio arco elettrico (Arc Flash)
-   - Rischio incendio elettrico
-   - Campi elettromagnetici
+3. CONTROLLO DUPLICAZIONI:
+   - Se azione già presente, NON ripetere
+   - Se migliorabile: "MODIFICARE: [dettagli]"
+   - Solo azioni mancanti come nuove
 
-2. VALUTAZIONE TENSIONI E PROCEDURE:
-   - Bassissima tensione (≤50V AC/120V DC)
-   - Bassa tensione BT (50-1000V AC/120-1500V DC)
-   - Media tensione MT (1-30kV)
-   - Alta tensione AT (>30kV)
-   - Necessità procedure LOTO/Lock-Out Tag-Out
-   - Distanze di sicurezza secondo CEI 11-27
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici
+- Esiste DPI Specialist dedicato
+- Fornisci solo electrical_context_for_dpi
 
-3. CONTROLLO GAP E RACCOMANDAZIONI INTELLIGENTI:
-   IMPORTANTE - Analizza se mancano procedure essenziali, ma evita duplicazioni:
-
-   a) PROCEDURA LOTO (Lock-Out Tag-Out):
-      - Se il lavoro coinvolge impianti elettrici E non è presente alcuna menzione di LOTO, sezionamento, blocco o cartellatura
-      - E se non sono presenti altre raccomandazioni generiche di isolamento energetico
-      - Raccomanda procedure LOTO specifiche per il dominio elettrico: "Implementare procedura LOTO elettrica specifica: sezionamento, verifica assenza tensione, blocco e cartellatura impianti"
-      
-   b) VERIFICA ASSENZA TENSIONE:
-      - Se non è presente verifica tensione o controllo elettrico
-      - Raccomanda: "Verificare assenza tensione con strumento certificato prima dell'intervento"
-      
-   c) QUALIFICHE PERSONALE:
-      - Se non sono specificate qualifiche PES/PAV/PEI
-      - Raccomanda: "Assegnare personale qualificato PES/PAV secondo CEI 11-27"
-      
-   d) COORDINAMENTO DPI:
-      - Verifica che il DPI Specialist riceva informazioni sul livello di tensione
-      - Non raccomandare DPI direttamente (competenza del DPI Specialist)
-
-   e) MESSA A TERRA:
-      - Se per tensioni MT/AT non è presente messa a terra di lavoro
-      - Raccomanda: "Installare messa a terra temporanea di lavoro"
-
-   IMPORTANTE: Prima di aggiungere gap_analysis, verifica che non sia già coperta dalle tue raccomandazioni principali.
-
-4. PROCEDURE DA DOCUMENTI AZIENDALI:
-   - Se nei documenti sono presenti procedure specifiche LOTO o elettriche
-   - Verifica conformità e suggerisci miglioramenti specifici
-   - Identifica step mancanti nelle procedure esistenti
-
-5. RACCOMANDAZIONI - PREREQUISITI PRE-AUTORIZZAZIONE:
-   Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
-   NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
-
-   - BT: Sezionamento da PREDISPORRE + verifica tensione da ESEGUIRE + qualifiche PES/PAV da VERIFICARE
-   - MT/AT: LOTO da IMPLEMENTARE + PES/PAV da VERIFICARE + messa a terra da INSTALLARE + procedure da PREDISPORRE
-
-IMPORTANTE: Fornisci risposta ESCLUSIVAMENTE in formato JSON valido, senza testo aggiuntivo:
-
+Rispondi SOLO JSON valido:
 {{
-  "electrical_risks_detected": ["lista dei rischi elettrici identificati"],
+  "electrical_risks_detected": ["rischi identificati"],
   "voltage_level": "BT|MT|AT|unknown|none",
-  "required_qualifications": ["lista qualifiche: PES/PAV/PEI"],
-  "safety_procedures": ["lista procedure obbligatorie solo se mancanti"],
-  "gap_analysis": ["lista analisi gap nelle azioni esistenti"],
-  "intelligent_recommendations": [{{"action": "descrizione azione", "criticality": "alta|media|bassa"}}],
+  "required_qualifications": ["PES/PAV/PEI se necessarie"],
+  "safety_procedures": ["procedure mancanti"],
+  "gap_analysis": ["lacune nelle azioni esistenti"],
+  "intelligent_recommendations": [{{"action": "azione", "criticality": "alta|media|bassa"}}],
   "electrical_context_for_dpi": {{
-    "voltage_level": "stesso valore di voltage_level",
-    "electrical_risks": ["rischi per DPI specialist"],
-    "work_type": "tipo lavoro elettrico"
+    "voltage_level": "stesso di sopra",
+    "electrical_risks": ["rischi per DPI"],
+    "work_type": "tipo lavoro"
   }}
 }}
 
-REGOLE FORMATO:
-- Tutti i campi sono OBBLIGATORI
-- EVITA DUPLICAZIONI: Non ripetere la stessa raccomandazione in campi diversi
-- Se LOTO è presente nei documenti, non aggiungerlo in safety_procedures o gap_analysis
-- Consolida internamente tutte le raccomandazioni simili in una sola voce per campo
-- I campi con "lista" devono essere array, anche se vuoti
-- electrical_context_for_dpi deve essere oggetto vuoto o con dati
-- voltage_level deve essere esattamente: BT, MT, AT, unknown, o none
-- intelligent_recommendations deve essere array di oggetti con formato {{"action": "descrizione", "criticality": "alta|media|bassa"}}
-- CRITICALITY LEVELS basate su probabilità e gravità del rischio:
-  * "alta": Rischi con alta probabilità E alta gravità (elettrocuzione imminente, arco elettrico, lavori sotto tensione)
-  * "media": Rischi con media probabilità O media gravità (lavori BT senza LOTO, qualifiche PES/PAV mancanti)
-  * "bassa": Rischi con bassa probabilità E bassa gravità (procedure incomplete, verifiche strumentali)
-- IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori
-- Non aggiungere testo prima o dopo il JSON
+CRITICALITY: alta=pericolo vita, media=infortunio grave, bassa=procedure incomplete
 """
         
         # Get AI analysis

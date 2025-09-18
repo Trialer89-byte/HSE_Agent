@@ -38,6 +38,18 @@ COMPETENZE PRIMARIE:
    - Fluidi in pressione residua
    - Sistemi gravitazionali
 
+VALUTAZIONE ATTREZZATURE NEL CONTESTO:
+- Le attrezzature sono MEZZI per svolgere l'attività, non l'oggetto del lavoro
+- Valuta idoneità delle attrezzature per lavori meccanici nel contesto specifico
+- Se le attrezzature causano rischi aggiuntivi nella lavorazione, stabilisci azioni correttive solo se non già definite nel permesso di lavoro
+- Suggerisci modifiche operative o cambiamento attrezzature se inadeguate per sicurezza meccanica
+- Considera energia meccanica, vibrazioni, rischi da schiacciamento delle attrezzature
+
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici (maschere, tute, scarpe, guanti, ecc.)
+- Esiste un DPI Specialist dedicato che gestisce tutti i dispositivi di protezione individuale
+- Concentrati SOLO sui rischi meccanici, energia immagazzinata e controlli tecnici
+
 4. RISCHI DA SCHIACCIAMENTO/TAGLIO
    - Utensili manuali e pneumatici
    - Lamiere, strutture pesanti
@@ -96,10 +108,9 @@ Analisi dettagliata dei rischi meccanici con:
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """AI-powered mechanical hazards analysis"""
         
-        # Get existing DPI and actions from permit
-        existing_dpi = permit_data.get('dpi_required', [])
+        # Get existing actions from permit - DPI handled by dedicated DPI specialist
         existing_actions = permit_data.get('risk_mitigation_actions', [])
-        
+
         # Get available documents for context
         available_docs = context.get("documents", [])
         
@@ -116,78 +127,52 @@ Analisi dettagliata dei rischi meccanici con:
             print(f"[{self.name}] Document search failed: {e}")
             all_docs = available_docs
         
-        # Create comprehensive AI analysis prompt
+        # Simplified AI analysis prompt maintaining all essential functionality
         permit_summary = f"""
-PERMESSO DI LAVORO - ANALISI SICUREZZA MECCANICA:
+ANALISI MECCANICA - PRE-AUTORIZZAZIONE
+Permesso NON ANCORA INIZIATO - valuta se approvabile.
 
+DATI PERMESSO:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
-TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
-UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+AZIONI ESISTENTI: {existing_actions}
 
-DPI ATTUALMENTE PREVISTI:
-{existing_dpi if existing_dpi else 'Nessun DPI specificato'}
+ANALISI RICHIESTA:
 
-AZIONI MITIGAZIONE RISCHI ATTUALI:
-{existing_actions if existing_actions else 'Nessuna azione specificata'}
+1. RISCHI MECCANICI:
+   - Schiacciamento, taglio, proiezioni, cadute oggetti, vibrazioni, rumore
+   - Energia: cinetica, potenziale, pressione fluidi, termica
+   - Distingui ATTIVITÀ vs ATTREZZATURE (mezzi usati)
 
-ANALIZZA COMPLETAMENTE I RISCHI MECCANICI:
+2. CONTROLLI OBBLIGATORI:
+   - LOTO solo per sistemi meccanici/idraulici/pneumatici fissi
+   - Procedure isolamento energia meccanica
+   - Compatibilità attrezzature con ambiente lavoro
 
-1. IDENTIFICAZIONE RISCHI MECCANICI:
-   - Schiacciamento/intrappolamento
-   - Taglio/perforazione/abrasione  
-   - Proiezione materiali/schegge
-   - Caduta oggetti dall'alto
-   - Urti/colpi/impatti
-   - Vibrazioni hand-arm e corpo intero
-   - Rumore >85 dB(A)
+3. CONTROLLO DUPLICAZIONI:
+   - Se azione già presente, NON ripetere
+   - Se migliorabile: "MODIFICARE: [dettagli]"
+   - Solo azioni mancanti come nuove
 
-2. FONTI DI ENERGIA:
-   - Energia cinetica (rotazione, movimento)
-   - Energia potenziale (molle, contrappesi)
-   - Pressione fluidi (idraulica, pneumatica, vapore)
-   - Energia elettrica su sistemi meccanici
-   - Energia termica (attrito, compressione)
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici
+- Esiste DPI Specialist dedicato
+- Focus SOLO su controlli tecnici e procedure meccaniche
 
-3. ATTREZZATURE E MACCHINARI:
-   - PLE/piattaforme elevabili
-   - Gru/sollevatori/paranchi
-   - Utensili elettrici/pneumatici
-   - Sistemi in pressione
-   - Parti rotanti/nastri trasportatori
-   - Presse/cesoie/macchine utensili
+Rispondi SOLO JSON valido:
+{{
+  "mechanical_risks": [{{"type": "tipo", "description": "desc", "severity": "bassa|media|alta|critica"}}],
+  "energy_sources": ["fonti energia e metodi isolamento"],
+  "existing_measures_adequacy": "adeguate|inadeguate|parziali",
+  "control_measures": ["controlli tecnici necessari"],
+  "intelligent_recommendations": [{{"action": "azione", "criticality": "alta|media|bassa"}}],
+  "loto_required": true/false,
+  "training_needs": ["formazione specifica"],
+  "risk_level": "basso|medio|alto|critico"
+}}
 
-4. VALUTAZIONE MISURE ESISTENTI:
-   - Adeguatezza DPI attuali per rischi meccanici identificati
-   - Completezza procedure di isolamento energia meccanica (non elettrica)
-   - Necessità procedure LOTO specifiche per sistemi meccanici/idraulici/pneumatici
-   - Conformità alle normative D.Lgs 81/08
-
-   IMPORTANTE: Concentrati SOLO su sistemi meccanici. Per lavori elettrici, lascia le procedure LOTO elettriche allo specialist elettrico.
-
-5. RACCOMANDAZIONI SPECIFICHE:
-   - DPI mancanti con normative EN specifiche
-   - Controlli tecnici di sicurezza per sistemi meccanici
-   - Procedure operative sicure per macchinari/attrezzature
-   - Formazione/addestramento per uso attrezzature meccaniche
-   - Attrezzature ausiliarie per sicurezza meccanica
-
-   REGOLA ANTI-DUPLICAZIONE: Se il work_type è "elettrico" o la descrizione contiene "elettrico/elettrica",
-   NON raccomandare procedure LOTO generiche. Concentrati solo su aspetti meccanici complementari.
-
-Fornisci risposta strutturata in JSON con:
-- mechanical_risks: array di rischi identificati con severity (bassa/media/alta/critica)
-- energy_sources: fonti energetiche presenti e metodi isolamento
-- existing_measures_adequacy: valutazione misure attuali (adeguate/inadeguate/parziali)
-- missing_dpi: array DPI mancanti con standard EN
-- control_measures: controlli tecnici/procedurali necessari
-- intelligent_recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per mitigare i rischi identificati (max 10)
-- loto_required: boolean se necessaria procedura LOTO
-- training_needs: formazione specifica richiesta
-- risk_level: livello rischio complessivo (basso/medio/alto/critico)
-
-IMPORTANTE: Evita raccomandazioni duplicate. Non ripetere la stessa azione in campi diversi.
+CRITICALITY: alta=pericolo vita, media=infortunio grave, bassa=procedure incomplete
 
 IMPORTANTE: Il campo 'intelligent_recommendations' deve contenere azioni specifiche e contestuali basate sui documenti aziendali e sui rischi identificati. Non fornire raccomandazioni generiche ma azioni concrete per questo specifico lavoro.
 
@@ -215,7 +200,6 @@ IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori.
                     "mechanical_risks": [{"type": "generic_mechanical", "description": "Rischi meccanici da valutare", "severity": "media"}],
                     "energy_sources": [],
                     "existing_measures_adequacy": "inadeguate",
-                    "missing_dpi": ["Guanti meccanici EN 388", "Scarpe antinfortunistiche S3"],
                     "loto_required": False,
                     "training_needs": ["Formazione uso attrezzature"],
                     "risk_level": "medio"
@@ -250,12 +234,11 @@ IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori.
             "risks_identified": risks_identified,
             "recommended_actions": recommended_actions,
             "existing_measures_evaluation": {
-                "existing_dpi": existing_dpi,
                 "existing_actions": existing_actions,
-                "dpi_adequacy": str(ai_analysis.get("existing_measures_adequacy", "da_valutare")).upper(),
                 "actions_adequacy": str(ai_analysis.get("existing_measures_adequacy", "da_valutare")).upper(),
                 "risk_level": ai_analysis.get("risk_level", "medio"),
-                "loto_required": ai_analysis.get("loto_required", False)
+                "loto_required": ai_analysis.get("loto_required", False),
+                "note": "DPI evaluation handled by dedicated DPI specialist"
             },
             "permits_required": ["Permesso Lavori Meccanici"] if ai_analysis.get("risk_level") in ["alto", "critico"] else [],
             "citations": citations,  # Add citations for document traceability

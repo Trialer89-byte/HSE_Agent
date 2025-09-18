@@ -810,8 +810,8 @@ class DocumentService:
         """
         Extract document metadata using AI
         """
-        # Truncate content for AI analysis (first 3000 chars to stay within token limits)
-        analysis_content = content[:3000] + "..." if len(content) > 3000 else content
+        # Use full content for better AI analysis (removed truncation for improved context)
+        analysis_content = content
         
         prompt = f"""
         Analizza il seguente documento e estrai i metadati richiesti.

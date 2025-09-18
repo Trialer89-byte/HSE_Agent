@@ -7,16 +7,28 @@ import Link from 'next/link';
 
 interface Document {
   id: number;
-  filename: string;
-  file_type: string;
-  file_size: number;
-  description?: string;
-  category: string;
-  tags: string[];
-  uploaded_by: string;
-  uploaded_at: string;
+  title: string;
+  document_code?: string;
+  document_type: string;
+  category?: string;
+  subcategory?: string;
+  authority?: string;
+  scope?: string;
+  industry_sectors?: string[];
+  keywords?: string[];
+  version?: string;
+  file_path?: string;
+  uploaded_by: number;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
   analysis_status?: string;
   analysis_result?: any;
+  weaviate_verification?: {
+    weaviate_verified: boolean;
+    weaviate_status: string;
+    vector_id?: string;
+  };
 }
 
 export default function DocumentsPage() {
@@ -26,6 +38,7 @@ export default function DocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
+  const [deletingDocuments, setDeletingDocuments] = useState<Set<number>>(new Set());
   const [uploadForm, setUploadForm] = useState({
     title: '',
     document_type: 'normativa',
@@ -45,7 +58,7 @@ export default function DocumentsPage() {
   const fetchDocuments = async () => {
     try {
       setIsLoading(true);
-      const response = await apiCall('/api/v1/documents/', {
+      const response = await apiCall('/api/v1/documents/?verify_weaviate=true', {
         method: 'GET',
       });
       setDocuments(response.documents || response.data || []);
@@ -136,6 +149,35 @@ export default function DocumentsPage() {
     }));
   };
 
+  const handleDeleteDocument = async (documentId: number, documentTitle: string) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${documentTitle}"? This action cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    setDeletingDocuments(prev => new Set(prev).add(documentId));
+
+    try {
+      await apiCall(`/api/v1/documents/${documentId}`, {
+        method: 'DELETE',
+      });
+
+      // Remove document from local state
+      setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+
+    } catch (error: any) {
+      console.error('Error deleting document:', error);
+      alert('Failed to delete document: ' + (error.message || 'Unknown error'));
+    } finally {
+      setDeletingDocuments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(documentId);
+        return newSet;
+      });
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -144,20 +186,20 @@ export default function DocumentsPage() {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const getFileIcon = (fileType: string | undefined) => {
-    if (!fileType) return '📎';
-    
-    const type = fileType.toLowerCase();
-    if (type.includes('pdf')) {
-      return '📄';
-    } else if (type.includes('word') || type.includes('doc')) {
-      return '📝';
-    } else if (type.includes('excel') || type.includes('sheet')) {
-      return '📊';
-    } else if (type.includes('image')) {
-      return '🖼️';
+  const getFileIcon = (documentType: string | undefined) => {
+    if (!documentType) return '📎';
+
+    const type = documentType.toLowerCase();
+    if (type.includes('normativa')) {
+      return '⚖️';
+    } else if (type.includes('istruzione') || type.includes('operativa')) {
+      return '📋';
+    } else if (type.includes('manuale')) {
+      return '📖';
+    } else if (type.includes('procedura')) {
+      return '🔄';
     } else {
-      return '📎';
+      return '📄';
     }
   };
 
@@ -449,14 +491,14 @@ export default function DocumentsPage() {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center space-x-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-2xl">
-                        {getFileIcon(doc.file_type)}
+                        {getFileIcon(doc.document_type)}
                       </div>
                       <div className="flex-1">
                         <p className="text-lg font-bold text-white truncate">
-                          {doc.filename}
+                          {doc.title}
                         </p>
                         <p className="text-sm text-slate-400 font-mono">
-                          {formatFileSize(doc.file_size)}
+                          {doc.document_type}
                         </p>
                       </div>
                     </div>
@@ -465,12 +507,12 @@ export default function DocumentsPage() {
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center space-x-2">
                       <span className="text-slate-500">👤</span>
-                      <span className="text-slate-300 text-sm">{doc.uploaded_by}</span>
+                      <span className="text-slate-300 text-sm">User #{doc.uploaded_by}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <span className="text-slate-500">📅</span>
                       <span className="text-slate-300 text-sm font-mono">
-                        {new Date(doc.uploaded_at).toLocaleDateString()}
+                        {new Date(doc.created_at).toLocaleDateString()}
                       </span>
                     </div>
                     {doc.category && (
@@ -481,35 +523,89 @@ export default function DocumentsPage() {
                     )}
                   </div>
 
-                  {doc.tags && doc.tags.length > 0 && (
+                  {doc.keywords && doc.keywords.length > 0 && (
                     <div className="mb-4 flex flex-wrap gap-2">
-                      {doc.tags.map((tag, index) => (
+                      {doc.keywords.slice(0, 3).map((keyword, index) => (
                         <span
                           key={index}
                           className="px-2 py-1 text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg uppercase tracking-wide"
                         >
-                          {tag}
+                          {keyword}
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
-                
-                <div className="bg-slate-900/30 px-6 py-4 border-t border-slate-700/50">
-                  <div className="flex justify-between items-center">
-                    <button
-                      className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-lg transition-all duration-200 text-sm"
-                      onClick={() => window.open(`/api/v1/documents/${doc.id}/download`, '_blank')}
-                    >
-                      <span>⬇️</span>
-                      <span>DOWNLOAD</span>
-                    </button>
+
+                {/* Database Status Indicators */}
+                <div className="bg-slate-800/30 px-6 py-3 border-t border-slate-700/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      {/* PostgreSQL Status */}
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-2 h-2 rounded-full ${doc.is_active ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                        <span className="text-xs text-slate-400 uppercase tracking-wide">
+                          PostgreSQL: {doc.is_active ? 'LOADED' : 'NOT LOADED'}
+                        </span>
+                      </div>
+
+                      {/* Weaviate Status */}
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-2 h-2 rounded-full ${
+                          doc.weaviate_verification?.weaviate_verified ? 'bg-green-400' : 'bg-red-400'
+                        }`}></div>
+                        <span className="text-xs text-slate-400 uppercase tracking-wide">
+                          Weaviate: {doc.weaviate_verification?.weaviate_verified ? 'LOADED' : 'NOT LOADED'}
+                        </span>
+                      </div>
+                    </div>
+
                     {doc.analysis_status && (
                       <div className="flex items-center space-x-2">
                         <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
                         <span className="text-xs text-slate-400 uppercase tracking-wide">
                           Analysis: {doc.analysis_status}
                         </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/30 px-6 py-4 border-t border-slate-700/50">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-lg transition-all duration-200 text-sm"
+                        onClick={() => window.open(`/api/v1/documents/${doc.id}/download`, '_blank')}
+                      >
+                        <span>⬇️</span>
+                        <span>DOWNLOAD</span>
+                      </button>
+
+                      <button
+                        className={`flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-slate-600 disabled:to-slate-700 text-white font-bold rounded-lg transition-all duration-200 text-sm disabled:cursor-not-allowed ${
+                          deletingDocuments.has(doc.id) ? 'opacity-50' : ''
+                        }`}
+                        onClick={() => handleDeleteDocument(doc.id, doc.title)}
+                        disabled={deletingDocuments.has(doc.id)}
+                      >
+                        {deletingDocuments.has(doc.id) ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            <span>DELETING...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🗑️</span>
+                            <span>DELETE</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {doc.weaviate_verification?.vector_id && (
+                      <div className="text-xs text-slate-500 font-mono">
+                        Vector ID: {doc.weaviate_verification.vector_id.slice(0, 8)}...
                       </div>
                     )}
                   </div>

@@ -43,8 +43,8 @@ async def verify_weaviate_status(document: Document) -> Dict[str, Any]:
         return verification_result
     
     try:
-        from app.services.vector_service import VectorService
-        vector_service = VectorService()
+        from app.services.service_factory import get_vector_service
+        vector_service = get_vector_service()
         
         # Try to search for the document in Weaviate using hybrid search
         search_results = await vector_service.hybrid_search(
@@ -191,8 +191,8 @@ async def process_document_upload(
         try:
             # Check if document exists in Weaviate by vector_id
             if document.vector_id:
-                from app.services.vector_service import VectorService
-                vector_service = VectorService()
+                from app.services.service_factory import get_vector_service
+                vector_service = get_vector_service()
                 
                 # Try to search for the document in Weaviate
                 search_results = await vector_service.hybrid_search(

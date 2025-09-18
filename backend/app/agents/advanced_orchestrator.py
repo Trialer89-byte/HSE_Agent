@@ -1,25 +1,21 @@
 """
-Advanced Orchestrator with 3-Step Process
-New architecture with risk classifier, specialist interaction, and consolidation
+Advanced HSE Orchestrator - Simplified Architecture
+Direct orchestrator with risk analysis and specialist coordination
 """
 
 import asyncio
 from typing import Dict, Any, List, Optional
 import time
-import json
 from datetime import datetime
 
 from .specialists import get_all_specialists
-from .cross_validation import CrossValidationAgent
 
 
 class AdvancedHSEOrchestrator:
     """
-    Simplified 4-step orchestrator:
-    1. Risk Analysis & Classification with Risk Mapper
-    2. Specialist Agent Selection & Interaction  
-    3. DPI Agent for PPE Analysis
-    4. Direct Output Generation from Specialists and DPI
+    Simplified 2-step orchestrator:
+    1. Risk Analysis & Classification with Unified Risk Classifier
+    2. Specialist Agent Selection & Interaction with direct output
     """
     
     def __init__(
@@ -37,7 +33,6 @@ class AdvancedHSEOrchestrator:
         if self.unified_risk_classifier:
             print(f"[AdvancedOrchestrator] Unified Risk Classifier type: {type(self.unified_risk_classifier)}")
         
-        self.cross_validator = CrossValidationAgent()
         
         # Inject vector service into all specialists
         if vector_service:
@@ -45,7 +40,7 @@ class AdvancedHSEOrchestrator:
                 specialist.vector_service = vector_service
             print(f"[AdvancedOrchestrator] Injected vector service into {len(self.specialists)} specialists")
         
-        print(f"[AdvancedOrchestrator] Initialized with enhanced 5-step process")
+        print(f"[AdvancedOrchestrator] Initialized with simplified 2-step process")
     
     async def analyze_permit_advanced(
         self, 
@@ -54,12 +49,10 @@ class AdvancedHSEOrchestrator:
         context_documents: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Simplified 4-step analysis process:
-        1. Risk Analysis & Classification with Risk Mapper
-        2. Specialist Agent Selection & Interaction
-        3. DPI Agent for PPE Analysis
-        4. Direct Output Generation from Specialists and DPI
-        
+        Simplified 2-step analysis process:
+        1. Risk Analysis & Classification with Unified Risk Classifier
+        2. Specialist Agent Selection & Interaction with direct output
+
         Args:
             permit_data: Basic permit data (title, description, etc.)
             permit_metadata: Extended metadata from PostgreSQL (risks, controls, history)
@@ -73,10 +66,10 @@ class AdvancedHSEOrchestrator:
         step_timings = {}
         
         try:
-            print(f"\n[AdvancedOrchestrator] Starting simplified 4-step analysis for permit {permit_data.get('id')}")
-            
-            # STEP 1: Work permit risk analysis with risk mapper
-            print("[AdvancedOrchestrator] STEP 1: Work permit risk analysis with risk mapper")
+            print(f"\n[AdvancedOrchestrator] Starting simplified 2-step analysis for permit {permit_data.get('id')}")
+
+            # STEP 1: Work permit risk analysis with unified risk classifier
+            print("[AdvancedOrchestrator] STEP 1: Work permit risk analysis with unified risk classifier")
             step1_start = time.time()
             classification_result = await self._step1_risk_analysis(
                 permit_data, 
@@ -105,37 +98,36 @@ class AdvancedHSEOrchestrator:
             step_timings["step2_specialist_analysis"] = round(time.time() - step2_start, 2)
             print(f"[AdvancedOrchestrator] STEP 2 completed in {step_timings['step2_specialist_analysis']}s")
             
-            # STEP 3: Skip DPI consolidation - DPIEvaluatorAgent handles this as specialist
-            print("[AdvancedOrchestrator] STEP 3: Skipping DPI consolidation - handled by DPIEvaluatorAgent")
-            dpi_results = {}
-            
-            # STEP 4: Build final result directly from specialist and DPI results (no consolidation)
-            print("[AdvancedOrchestrator] STEP 4: Building final result directly from specialists and DPI")
+            # STEP 2 COMPLETE: Build final result directly from specialist results
+            print("[AdvancedOrchestrator] Building final result directly from specialist results")
             step4_start = time.time()
-            final_result = self._build_simple_final_result(
+            final_result = self._build_final_result(
                 permit_data,
                 permit_metadata,
                 classification_result,
                 specialist_results,
-                dpi_results,
+                {},  # DPI functionality moved to specialists, so pass empty dict
                 context_documents,
                 time.time() - start_time,
                 step_timings
             )
-            step_timings["step4_final_output"] = round(time.time() - step4_start, 2)
-            print(f"[AdvancedOrchestrator] STEP 4 completed in {step_timings['step4_final_output']}s")
-            
+            step_timings["final_output_generation"] = round(time.time() - step4_start, 2)
+            print(f"[AdvancedOrchestrator] Final output generation completed in {step_timings['final_output_generation']}s")
+
             total_time = round(time.time() - start_time, 2)
-            print(f"[AdvancedOrchestrator] Enhanced 4-step analysis completed in {total_time}s")
+            print(f"[AdvancedOrchestrator] Simplified 2-step analysis completed in {total_time}s")
             print(f"[AdvancedOrchestrator] Step breakdown: {step_timings}")
             
             return final_result
             
         except Exception as e:
-            print(f"[AdvancedOrchestrator] Error during enhanced 5-step analysis: {e}")
+            print(f"[AdvancedOrchestrator] Error during simplified analysis: {e}")
             import traceback
             traceback.print_exc()
-            return self._create_error_result(str(e), start_time)
+
+            # Enhanced error tracking to identify which step failed
+            error_context = f"Error in permit {permit_data.get('id', 'unknown')}: {str(e)}"
+            return self._create_error_result(error_context, start_time)
     
     async def _step1_risk_analysis(
         self,
@@ -147,7 +139,16 @@ class AdvancedHSEOrchestrator:
         STEP 1: Comprehensive risk analysis and classification
         Read all permit fields, identify declared and undeclared risks using risk classifier
         """
-        
+
+        print(f"[AdvancedOrchestrator] Starting risk analysis for permit {permit_data.get('id')}")
+
+        # Validate permit data before analysis
+        try:
+            self._validate_permit_data(permit_data)
+        except Exception as e:
+            print(f"[AdvancedOrchestrator] Permit data validation failed: {e}")
+            raise ValueError(f"Invalid permit data for permit {permit_data.get('id', 'unknown')}: {e}")
+
         # Build enhanced context with full permit analysis
         enhanced_context = {
             "documents": context_documents,
@@ -402,482 +403,11 @@ class AdvancedHSEOrchestrator:
         
         return result
     
-    async def _step3_consolidation(
-        self,
-        permit_data: Dict[str, Any],
-        permit_metadata: Dict[str, Any],
-        classification: Dict[str, Any],
-        specialist_results: Dict[str, Any],
-        context_documents: List[Dict[str, Any]],
-        processing_time: float
-    ) -> Dict[str, Any]:
-        """
-        STEP 3: Consolidation and coherence checking
-        - Consolidate all actions and DPI recommendations
-        - Check for coherence and eliminate duplicates
-        - Resolve conflicts between specialist recommendations
-        - Ensure DPI compatibility (e.g., electrical + cut protection gloves)
-        """
-        
-        # Collect all recommendations
-        all_actions = []
-        all_dpi = []
-        
-        # Extract recommendations from each specialist
-        for specialist_name, result in specialist_results.items():
-            if "error" not in result:
-                actions = result.get("mitigation_actions", [])
-                dpi = result.get("dpi_requirements", [])
-                
-                # Tag recommendations with source
-                for action in actions:
-                    all_actions.append({
-                        "action": action,
-                        "source": specialist_name,
-                        "type": "specialist_recommendation"
-                    })
-                
-                for dpi_item in dpi:
-                    all_dpi.append({
-                        "item": dpi_item,
-                        "source": specialist_name,
-                        "type": "specialist_requirement"
-                    })
-        
-        # COHERENCE CHECKING: Resolve conflicts and duplicates
-        coherent_actions = await self._resolve_action_conflicts(all_actions)
-        compatible_dpi = await self._resolve_dpi_compatibility(all_dpi)
-        
-        # INTERACTION RESULTS: Check if specialists needed to interact
-        interaction_summary = await self._analyze_specialist_interactions(
-            specialist_results, coherent_actions, compatible_dpi
-        )
-        
-        print(f"[AdvancedOrchestrator] STEP 3 Complete - Consolidated {len(all_actions)} actions to {len(coherent_actions)}, {len(all_dpi)} DPI to {len(compatible_dpi)}")
-        
-        # Build final consolidated result
-        return self._build_final_consolidated_result(
-            permit_data, permit_metadata, classification,
-            specialist_results, context_documents,
-            coherent_actions, compatible_dpi,
-            interaction_summary, processing_time
-        )
-    
-    async def _resolve_action_conflicts(self, all_actions: List[Dict]) -> List[Dict]:
-        """
-        Resolve conflicts between specialist action recommendations
-        """
-        print(f"  Resolving conflicts in {len(all_actions)} action recommendations")
-        
-        # Group similar actions
-        action_groups = {}
-        for action_item in all_actions:
-            action_text = str(action_item["action"]).lower()
-            
-            # Group by action type
-            if "ventilaz" in action_text or "ventilation" in action_text:
-                key = "ventilation"
-            elif "lockout" in action_text or "loto" in action_text or "isolamento" in action_text:
-                key = "isolation"
-            elif "gas test" in action_text or "atmosfera" in action_text:
-                key = "atmosphere_monitoring"
-            elif "fire watch" in action_text or "sorveglianza" in action_text:
-                key = "fire_watch"
-            else:
-                key = action_text[:30]  # Use first 30 chars as key
-            
-            if key not in action_groups:
-                action_groups[key] = []
-            action_groups[key].append(action_item)
-        
-        # Consolidate each group
-        coherent_actions = []
-        for group_key, actions in action_groups.items():
-            if len(actions) == 1:
-                coherent_actions.append(actions[0])
-            else:
-                # Merge multiple similar actions
-                consolidated = self._merge_similar_actions(actions)
-                coherent_actions.append(consolidated)
-        
-        print(f"  Consolidated to {len(coherent_actions)} coherent actions")
-        return coherent_actions
-    
-    async def _resolve_dpi_compatibility(self, all_dpi: List[Dict]) -> List[Dict]:
-        """
-        Resolve DPI compatibility issues (e.g., combine electrical + cut protection)
-        """
-        print(f"  Resolving compatibility in {len(all_dpi)} DPI recommendations")
-        
-        # Group DPI by body part/type
-        dpi_groups = {
-            "hand_protection": [],
-            "eye_protection": [],
-            "foot_protection": [],
-            "head_protection": [],
-            "respiratory_protection": [],
-            "body_protection": [],
-            "fall_protection": []
-        }
-        
-        for dpi_item in all_dpi:
-            dpi_text = str(dpi_item["item"]).lower()
-            
-            if "guant" in dpi_text or "glove" in dpi_text:
-                dpi_groups["hand_protection"].append(dpi_item)
-            elif "occhial" in dpi_text or "goggle" in dpi_text or "eye" in dpi_text:
-                dpi_groups["eye_protection"].append(dpi_item)
-            elif "scarpe" in dpi_text or "boot" in dpi_text or "shoe" in dpi_text:
-                dpi_groups["foot_protection"].append(dpi_item)
-            elif "casco" in dpi_text or "helmet" in dpi_text:
-                dpi_groups["head_protection"].append(dpi_item)
-            elif "respirator" in dpi_text or "ffp" in dpi_text or "mask" in dpi_text:
-                dpi_groups["respiratory_protection"].append(dpi_item)
-            elif "tuta" in dpi_text or "suit" in dpi_text:
-                dpi_groups["body_protection"].append(dpi_item)
-            elif "imbracatura" in dpi_text or "harness" in dpi_text:
-                dpi_groups["fall_protection"].append(dpi_item)
-            else:
-                dpi_groups["body_protection"].append(dpi_item)  # Default group
-        
-        # Resolve compatibility within each group
-        compatible_dpi = []
-        for group_name, dpi_items in dpi_groups.items():
-            if len(dpi_items) == 0:
-                continue
-            elif len(dpi_items) == 1:
-                compatible_dpi.append(dpi_items[0])
-            else:
-                # Resolve conflicts within the group - EXAMPLE: electrical + cut protection gloves
-                resolved = self._resolve_dpi_group_conflicts(group_name, dpi_items)
-                compatible_dpi.extend(resolved)
-        
-        print(f"  Resolved to {len(compatible_dpi)} compatible DPI items")
-        return compatible_dpi
-    
-    def _resolve_dpi_group_conflicts(self, group_name: str, dpi_items: List[Dict]) -> List[Dict]:
-        """
-        Resolve conflicts within a DPI group (e.g., find glove that provides both electrical and cut protection)
-        """
-        if group_name == "hand_protection":
-            # EXAMPLE IMPLEMENTATION: Special handling for gloves - find compatible protection
-            electrical_needed = any("elettric" in str(item["item"]).lower() or "electrical" in str(item["item"]).lower() for item in dpi_items)
-            cut_needed = any("taglio" in str(item["item"]).lower() or "cut" in str(item["item"]).lower() for item in dpi_items)
-            chemical_needed = any("chemic" in str(item["item"]).lower() or "chimico" in str(item["item"]).lower() for item in dpi_items)
-            
-            if electrical_needed and cut_needed:
-                # Need multi-protection gloves - THIS IS THE EXAMPLE FROM REQUIREMENTS
-                return [{
-                    "item": "Guanti multi-protezione: elettrica + antitaglio EN 388 Livello 3 + EN 60903",
-                    "source": "Consolidated requirement",
-                    "type": "compatibility_resolved",
-                    "protection_types": ["electrical", "cut_protection"],
-                    "note": "Risolto conflitto protezione elettrica/taglio - agente elettrico + meccanico"
-                }]
-            elif electrical_needed and chemical_needed:
-                return [{
-                    "item": "Guanti multi-protezione: elettrica + chimica EN 60903 + EN 374",
-                    "source": "Consolidated requirement", 
-                    "type": "compatibility_resolved",
-                    "protection_types": ["electrical", "chemical_protection"]
-                }]
-        
-        # For other groups or simpler conflicts, return most stringent requirement
-        most_stringent = max(dpi_items, key=lambda x: len(str(x["item"])))
-        most_stringent["type"] = "most_stringent_selected"
-        most_stringent["consolidation_note"] = f"Selected most stringent from {len(dpi_items)} options"
-        return [most_stringent]
-    
-    async def _analyze_specialist_interactions(
-        self, 
-        specialist_results: Dict[str, Any], 
-        actions: List[Dict], 
-        dpi: List[Dict]
-    ) -> Dict[str, Any]:
-        """
-        Analyze whether specialists needed to interact for conflict resolution
-        """
-        interaction_needed = False
-        interaction_details = []
-        
-        # Check for potential conflicts that required resolution
-        specialist_names = list(specialist_results.keys())
-        
-        if len(specialist_names) > 1:
-            for i, spec1 in enumerate(specialist_names):
-                for spec2 in specialist_names[i+1:]:
-                    # Check if both specialists made recommendations for same risk area
-                    overlap = self._check_specialist_overlap(spec1, spec2, actions, dpi)
-                    if overlap:
-                        interaction_needed = True
-                        interaction_details.append(f"{spec1} and {spec2} had overlapping recommendations")
-        
-        return {
-            "interaction_occurred": interaction_needed,
-            "interaction_details": interaction_details,
-            "conflicts_resolved": len(interaction_details),
-            "final_coherence_achieved": True
-        }
-    
-    def _merge_similar_actions(self, actions: List[Dict]) -> Dict:
-        """
-        Merge similar actions from multiple specialists
-        """
-        sources = [action["source"] for action in actions]
-        action_texts = [str(action["action"]) for action in actions]
-        
-        # Create merged action
-        return {
-            "action": f"Consolidato: {action_texts[0]}",  # Use first as base
-            "source": f"Multiple specialists: {', '.join(sources)}",
-            "type": "consolidated_recommendation",
-            "original_count": len(actions),
-            "consolidation_note": f"Merged {len(actions)} similar recommendations"
-        }
-    
-    def _check_specialist_overlap(self, spec1: str, spec2: str, actions: List[Dict], dpi: List[Dict]) -> bool:
-        """
-        Check if two specialists have overlapping recommendations
-        """
-        spec1_actions = [a for a in actions if spec1 in str(a.get("source", ""))]
-        spec2_actions = [a for a in actions if spec2 in str(a.get("source", ""))]
-        
-        spec1_dpi = [d for d in dpi if spec1 in str(d.get("source", ""))]
-        spec2_dpi = [d for d in dpi if spec2 in str(d.get("source", ""))]
-        
-        # Simple overlap check based on keywords
-        return (len(spec1_actions) > 0 and len(spec2_actions) > 0) or (len(spec1_dpi) > 0 and len(spec2_dpi) > 0)
     
     
-    def _build_final_consolidated_result(
-        self,
-        permit_data: Dict[str, Any],
-        permit_metadata: Dict[str, Any],
-        classification: Dict[str, Any],
-        specialist_results: Dict[str, Any],
-        context_documents: List[Dict[str, Any]],
-        coherent_actions: List[Dict],
-        compatible_dpi: List[Dict],
-        interaction_summary: Dict[str, Any],
-        processing_time: float
-    ) -> Dict[str, Any]:
-        """
-        Build the final consolidated result with all 3 steps completed
-        """
-        
-        # Extract actions and DPI for action items
-        final_actions = [item["action"] for item in coherent_actions]
-        final_dpi = [item["item"] for item in compatible_dpi]
-        
-        # Create action items from consolidated specialist results
-        action_items = self._create_action_items_from_consolidated(
-            final_actions, final_dpi, permit_metadata, coherent_actions, compatible_dpi
-        )
-        
-        # Calculate summary metrics using risk mapping results
-        critical_issues = 0
-        if classification.get("risk_mapping"):
-            detected_risks = classification["risk_mapping"].get("detected_risks", {})
-            risk_combinations = classification["risk_mapping"].get("risk_combinations", [])
-            
-            # Count high-confidence risks that are critical
-            critical_risk_types = ["hot_work", "confined_space", "electrical", "height"]
-            critical_issues = len([r for r in detected_risks.keys() if r in critical_risk_types and detected_risks[r].get("confidence", 0) > 0.5])
-            
-            # Add critical combinations
-            critical_issues += len([c for c in risk_combinations if c.get("severity") == "critical"])
-        
-        return {
-            "analysis_id": f"advanced_3step_{int(time.time())}_{permit_data.get('id')}",
-            "permit_id": permit_data.get("id"),
-            "processing_time": round(processing_time, 2),
-            
-            # Correttezza del permesso (in testa)
-            "permit_correctness": {
-                "completeness_score": classification.get('permit_completeness', {}).get('score', 0),
-                "missing_elements": classification.get('permit_completeness', {}).get('missing_elements', []),
-                "overall_assessment": self._determine_compliance_level(classification, critical_issues),
-                "recommendations_needed": len(action_items)
-            },
-            
-            # 3-Step Process Summary
-            "three_step_process": {
-                "step1_risk_analysis": {
-                    "completed": True,
-                    "risks_identified": len(classification.get("risk_mapping", {}).get("detected_risks", {})),
-                    "completeness_score": classification.get('permit_completeness', {}).get('score', 0)
-                },
-                "step2_specialist_interaction": {
-                    "completed": True,
-                    "specialists_activated": len(specialist_results),
-                    "document_control_enforced": True,
-                    "interaction_occurred": interaction_summary.get("interaction_occurred", False)
-                },
-                "step3_consolidation": {
-                    "completed": True,
-                    "actions_consolidated": len(coherent_actions),
-                    "dpi_compatibility_resolved": len(compatible_dpi),
-                    "conflicts_resolved": interaction_summary.get("conflicts_resolved", 0)
-                }
-            },
-            
-            # Executive Summary (semplificato)
-            "executive_summary": {
-                "overall_score": self._calculate_overall_score(classification, critical_issues, compatible_dpi, coherent_actions),
-                "critical_issues": critical_issues,
-                "recommendations": len(action_items),
-                "compliance_level": self._determine_compliance_level(classification, critical_issues),
-                "estimated_completion_time": "0-0 ore",
-                "key_findings": self._extract_key_findings(classification, permit_metadata),
-            },
-            
-            # Lista azioni prioritizzate
-            "prioritized_actions": self._create_prioritized_actions(coherent_actions, compatible_dpi, classification),
-            
-            # DPI da aggiungere/modificare
-            "dpi_modifications": self._create_dpi_modifications(compatible_dpi, permit_data, classification),
-            
-            "action_items": action_items,
-            "agents_involved": ["Risk_Classifier"] + list(specialist_results.keys()),
-            
-            # Required schema fields
-            "citations": self._create_citations(context_documents, permit_metadata),
-            "timestamp": datetime.utcnow().isoformat(),
-            "ai_version": "Advanced-3Step-AI-1.0",
-            
-            # Consolidation results
-            "consolidation_results": {
-                "original_actions": len([item for sublist in [result.get("recommended_actions", []) for result in specialist_results.values() if "error" not in result] for item in sublist]),
-                "final_actions": len(coherent_actions),
-                "original_dpi": len([item for sublist in [result.get("dpi_requirements", []) for result in specialist_results.values() if "error" not in result] for item in sublist]),
-                "final_dpi": len(compatible_dpi),
-                "compatibility_issues_resolved": interaction_summary.get("conflicts_resolved", 0),
-                "interaction_summary": interaction_summary
-            },
-            
-            # Performance metrics
-            "performance_metrics": {
-                "total_processing_time": round(processing_time, 2),
-                "step1_duration": "~30%",
-                "step2_duration": "~50%", 
-                "step3_duration": "~20%",
-                "specialists_activated": len(specialist_results),
-                "document_control_performed": True,
-                "interaction_enabled": True,
-                "consolidation_performed": True,
-                "risks_identified": len(classification.get("risk_mapping", {}).get("detected_risks", {})),
-                "documents_analyzed": len(context_documents)
-            }
-        }
     
-    def _create_action_items_from_consolidated(
-        self, 
-        final_actions: List[str],
-        final_dpi: List[str], 
-        permit_metadata: Dict[str, Any],
-        coherent_actions: List[Dict],
-        compatible_dpi: List[Dict]
-    ) -> List[Dict[str, Any]]:
-        """
-        Create action items from consolidated results
-        """
-        action_items = []
-        item_id = 1
-        
-        # Priority actions from consolidation - use AI-generated criticality
-        for action_item in coherent_actions:
-            # Trust AI-generated criticality from specialists, no hardcoded overrides
-            priority = action_item.get("priority", "media")  # Keep original priority from specialists
-
-            action_items.append({
-                "id": f"ACT_{item_id:03d}",
-                "type": "consolidated_action",
-                "priority": priority,
-                "action": str(action_item["action"]),
-                "source": action_item.get('source', 'Multiple specialists'),
-                "category": "safety_control"
-            })
-            item_id += 1
-        
-        # Compatible DPI requirements - use AI-generated priority
-        for dpi_item in compatible_dpi:
-            # Trust DPI specialist analysis, no hardcoded priority overrides
-            priority = dpi_item.get("priority", "alta")  # DPI is generally high priority
-
-            action_items.append({
-                "id": f"ACT_{item_id:03d}",
-                "type": "consolidated_dpi",
-                "priority": priority,
-                "action": f"Fornire DPI: {str(dpi_item['item'])}",
-                "source": dpi_item.get('source', 'Multiple specialists'),
-                "category": "dpi_safety"
-            })
-            item_id += 1
-            
-            if item_id > 10:  # Limit to 10 action items
-                break
-        
-        return action_items
     
-    def _create_prioritized_actions(
-        self,
-        coherent_actions: List[Dict],
-        compatible_dpi: List[Dict],
-        classification: Dict[str, Any]
-    ) -> Dict[str, List[Dict]]:
-        """
-        Crea una lista di azioni divise per priorità basata su AI-generated criticality
-        Trust specialists' AI analysis instead of hardcoded rules
-        """
-        prioritized = {
-            "alta": [],
-            "media": [],
-            "bassa": []
-        }
-
-        action_id = 1
-
-        # Process consolidated actions - trust AI-generated priority
-        for action_item in coherent_actions:
-            action_text = str(action_item.get("action", ""))
-            source = action_item.get("source", "")
-
-            # Use AI-generated priority from specialists, no hardcoded overrides
-            priority = action_item.get("priority", "media")
-
-            prioritized[priority].append({
-                "id": f"PA_{action_id:03d}",
-                "action": action_text,
-                "source": source,
-                "category": self._identify_risk_area(action_text)
-            })
-            action_id += 1
-
-        # Add actions for permit completeness if necessary (keep as alta since these are critical gaps)
-        completeness_score = classification.get('permit_completeness', {}).get('score', 10)
-        if completeness_score < 8:
-            missing_elements = classification.get('permit_completeness', {}).get('missing_elements', [])
-            for element in missing_elements:
-                prioritized["alta"].append({
-                    "id": f"PA_{action_id:03d}",
-                    "action": f"Completare elemento mancante: {element}",
-                    "source": "Valutazione completezza",
-                    "category": "documentale"
-                })
-                action_id += 1
-
-        # Add actions for non-recurrent work (keep as alta since these require extra attention)
-        recurrence_info = classification.get("permit_metadata", {}).get("recurrence_analysis")
-        if recurrence_info and not recurrence_info.get("is_recurrent", True):
-            prioritized["alta"].append({
-                "id": f"PA_{action_id:03d}",
-                "action": f"Verifica aggiuntiva per lavoro non ricorrente: {recurrence_info.get('recurrence_note', 'Lavoro non ricorrente')}",
-                "source": "Analisi ricorrenza",
-                "category": "risk_management"
-            })
-            action_id += 1
-
-        return prioritized
+    
 
     def _convert_criticality_to_priority(self, criticality: str) -> str:
         """
@@ -902,74 +432,6 @@ class AdvancedHSEOrchestrator:
             # Default fallback
             return "media"
 
-    def _create_dpi_modifications(
-        self,
-        compatible_dpi: List[Dict],
-        permit_data: Dict[str, Any], 
-        classification: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Crea sezione DPI da aggiungere/modificare
-        """
-        existing_dpi = permit_data.get('dpi_required', [])
-        
-        # DPI da aggiungere
-        dpi_to_add = []
-        # DPI da modificare/sostituire
-        dpi_to_modify = []
-        
-        for dpi_item in compatible_dpi:
-            dpi_text = str(dpi_item.get("item", ""))
-            source = dpi_item.get("source", "")
-            
-            # Determina se è aggiunta o modifica
-            is_modification = (dpi_item.get("type") == "compatibility_resolved" or
-                             "multi-protezione" in dpi_text.lower())
-
-            # Use AI-generated priority from DPI specialist
-            priority = dpi_item.get("priority", "alta")  # DPI is generally high priority if not specified
-
-            dpi_entry = {
-                "item": dpi_text,
-                "source": source,
-                "citation": self._find_dpi_citation(dpi_text, classification),
-                "priority": priority,
-                "justification": self._get_dpi_justification(dpi_text, classification),
-                "category": self._categorize_dpi(dpi_text)
-            }
-            
-            if is_modification:
-                dpi_to_modify.append(dpi_entry)
-            else:
-                dpi_to_add.append(dpi_entry)
-        
-        return {
-            "existing_dpi": existing_dpi,
-            "to_add": dpi_to_add,
-            "to_modify": dpi_to_modify,
-            "total_changes": len(dpi_to_add) + len(dpi_to_modify),
-            "modification_summary": self._create_dpi_summary(dpi_to_add, dpi_to_modify, existing_dpi)
-        }
-    
-    def _find_action_citation(self, action_text: str, classification: Dict[str, Any]) -> Dict[str, str]:
-        """Trova citazione documentale per l'azione"""
-        # Logica semplificata - in produzione dovrebbe cercare nei documenti
-        if "elettric" in action_text.lower():
-            return {
-                "document": "CEI 11-27",
-                "requirement": "Lavori su impianti elettrici"
-            }
-        elif "ventilaz" in action_text.lower():
-            return {
-                "document": "D.Lgs 81/2008",
-                "requirement": "Ventilazione spazi confinati"
-            }
-        elif "lockout" in action_text.lower() or "isolamento" in action_text.lower():
-            return {
-                "document": "Procedura LOTO aziendale",
-                "requirement": "Isolamento energie pericolose"
-            }
-        return None
     
     def _find_dpi_citation(self, dpi_text: str, classification: Dict[str, Any]) -> Dict[str, str]:
         """Trova citazione documentale per il DPI"""
@@ -996,21 +458,6 @@ class AdvancedHSEOrchestrator:
             }
         return None
     
-    def _identify_risk_area(self, action_text: str) -> str:
-        """Identifica l'area di rischio dell'azione"""
-        action_lower = action_text.lower()
-        if "elettric" in action_lower:
-            return "Elettrico"
-        elif "chimico" in action_lower or "sostanza" in action_lower:
-            return "Chimico"
-        elif "altezza" in action_lower or "caduta" in action_lower:
-            return "Lavori in altezza"
-        elif "caldo" in action_lower or "saldatura" in action_lower:
-            return "Lavori a caldo"
-        elif "confinato" in action_lower or "serbatoio" in action_lower:
-            return "Spazi confinati"
-        else:
-            return "Generale"
     
     def _get_dpi_justification(self, dpi_text: str, classification: Dict[str, Any]) -> str:
         """Fornisce giustificazione per il DPI usando risk mapping results"""
@@ -1118,63 +565,6 @@ class AdvancedHSEOrchestrator:
         
         return assessment
     
-    def _calculate_overall_score(self, classification: Dict, critical_issues: int, compatible_dpi: List, coherent_actions: List) -> float:
-        """Calculate overall score"""
-        base_score = 0.8
-        if critical_issues > 2:
-            base_score *= 0.5
-        elif critical_issues > 0:
-            base_score *= 0.7
-        if len(compatible_dpi) == 0:
-            base_score *= 0.8
-        return round(base_score, 2)
-    
-    def _determine_compliance_level(self, classification: Dict, critical_issues: int) -> str:
-        """Determine compliance level"""
-        completeness_score = classification.get('permit_completeness', {}).get('score', 0)
-        
-        if critical_issues > 2:
-            return "NON CONFORME - Rischi critici non gestiti"
-        elif completeness_score < 5:
-            return "INCOMPLETO - Informazioni mancanti"
-        elif critical_issues > 0:
-            return "ACCETTABILE - Con raccomandazioni"
-        else:
-            return "CONFORME - Standard soddisfatti"
-    
-    def _extract_key_findings(self, classification: Dict, permit_metadata: Dict) -> List[str]:
-        """Extract key findings using risk mapping results"""
-        findings = []
-        
-        # Get risks from risk mapping results
-        if classification.get('risk_mapping'):
-            detected_risks = classification['risk_mapping'].get('detected_risks', {})
-            risk_combinations = classification['risk_mapping'].get('risk_combinations', [])
-            
-            if detected_risks:
-                risk_names = [risk.replace('_', ' ').title() for risk in detected_risks.keys()]
-                findings.append(f"⚠️ RISCHI IDENTIFICATI: {', '.join(risk_names)}")
-            
-            # Add critical combinations
-            for combo in risk_combinations:
-                if combo.get('severity') == 'critical':
-                    findings.append(f"🚨 {combo.get('warning', 'Combinazione critica rilevata')}")
-        else:
-            # If risk mapping not available, add generic message
-            findings.append("⚠️ Sistema di mappatura rischi non disponibile")
-        
-        completeness_score = classification.get('permit_completeness', {}).get('score', 0)
-        findings.append(f"🔍 COMPLETEZZA PERMESSO: {completeness_score}/10")
-        
-        # Add recurrence analysis to key findings
-        if permit_metadata.get("recurrence_analysis"):
-            recurrence_info = permit_metadata["recurrence_analysis"]
-            if recurrence_info["is_recurrent"]:
-                findings.append(f"🔄 LAVORO RICORRENTE: {recurrence_info['historical_count']} precedenti")
-            else:
-                findings.append(f"⚠️ LAVORO NON RICORRENTE: Prima volta o raro - maggiore attenzione")
-        
-        return findings[:5]
     
     
     def _create_citations(self, context_documents: List[Dict[str, Any]], permit_metadata: Dict[str, Any]) -> Dict[str, List]:
@@ -1274,7 +664,7 @@ class AdvancedHSEOrchestrator:
     
     
     def _create_error_result(self, error_msg: str, start_time: float) -> Dict[str, Any]:
-        """Create error result"""
+        """Create error result with proper structure for permits router compatibility"""
         return {
             "analysis_id": f"error_{int(time.time())}",
             "permit_id": 0,
@@ -1282,8 +672,14 @@ class AdvancedHSEOrchestrator:
             "error": error_msg,
             "processing_time": round(time.time() - start_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
-            "agents_involved": [],
-            "ai_version": "Advanced-3Step-AI-1.0-Error",
+            "agents_involved": ["Risk_Classifier"],  # At least this ran before error
+            "ai_version": "Advanced-Final-1.0-Error",
+
+            # Add specialist_analysis structure for permits router compatibility
+            "specialist_analysis": {
+                "results_by_specialist": {}
+            },
+
             "executive_summary": {
                 "overall_score": 0.0,
                 "critical_issues": 1,
@@ -1293,313 +689,62 @@ class AdvancedHSEOrchestrator:
                 "key_findings": [f"ERRORE: {error_msg}"],
             },
             "action_items": [],
+            "dpi_requirements": [],
             "citations": {"normative": [], "internal": [], "metadata": []},
             "performance_metrics": {
                 "total_processing_time": round(time.time() - start_time, 2),
                 "specialists_activated": 0,
-                "parallel_execution": False,
+                "analysis_depth": "error",
                 "risks_identified": 0,
                 "documents_analyzed": 0
             }
         }
-    
-    async def _build_final_result_from_specialists(
-        self,
-        permit_data: Dict[str, Any],
-        permit_metadata: Dict[str, Any],
-        classification: Dict[str, Any],
-        specialist_results: Dict[str, Any],
-        context_documents: List[Dict[str, Any]],
-        processing_time: float
-    ) -> Dict[str, Any]:
-        """
-        Build final result directly from specialist results without consolidation
-        Convert specialist control_measures and dpi_requirements directly to action items
-        """
-        
-        # Extract all actions and DPI from specialist results
-        all_action_items = []
-        item_id = 1
-        agents_involved = ["Risk_Classifier"]
-        
-        print(f"[AdvancedOrchestrator] Processing {len(specialist_results)} specialist results")
-        
-        for specialist_name, result in specialist_results.items():
-            if "error" not in result:
-                agents_involved.append(specialist_name)
-                
-                # Get recommended actions from specialist
-                recommended_actions = result.get("recommended_actions", [])
-                dpi_requirements = result.get("dpi_requirements", [])
-                
-                print(f"  {specialist_name}: {len(recommended_actions)} actions, {len(dpi_requirements)} DPI")
-                
-                # Convert recommended actions to action items
-                for action_item in recommended_actions:
-                    if isinstance(action_item, dict):
-                        # Extract action text and priority from specialist action item
-                        action_text = action_item.get("action", "")
-                        criticality = action_item.get("criticality", "media")
-                        
-                        # Convert criticality to priority
-                        if criticality in ["critica", "critical"]:
-                            priority = "alta"
-                        elif criticality in ["alta", "high"]:
-                            priority = "alta"
-                        elif criticality in ["media", "medium"]:
-                            priority = "media"
-                        elif criticality in ["bassa", "low"]:
-                            priority = "bassa"
-                        else:
-                            priority = "media"
-                            
-                        all_action_items.append({
-                            "id": f"ACT_{item_id:03d}",
-                            "type": action_item.get("type", "control_measure"),
-                            "priority": priority,
-                            "action": action_text,
-                            "source": specialist_name,
-                            "category": action_item.get("category", "safety_control")
-                        })
-                    else:
-                        # Handle string actions (fallback - specialists should return structured objects)
-                        all_action_items.append({
-                            "id": f"ACT_{item_id:03d}",
-                            "type": "control_measure",
-                            "priority": "media",  # Default only for string fallback
-                            "action": str(action_item),
-                            "source": specialist_name,
-                            "category": "safety_control"
-                        })
-                    item_id += 1
-                
-                # Convert DPI requirements to action items
-                for dpi in dpi_requirements:
-                    # DPI requirements should come from DPI specialist with proper priority
-                    dpi_priority = dpi.get("priority", "alta") if isinstance(dpi, dict) else "alta"
-                    dpi_text = dpi.get("item", str(dpi)) if isinstance(dpi, dict) else str(dpi)
 
-                    all_action_items.append({
-                        "id": f"DPI_{item_id:03d}",
-                        "type": "dpi_requirement",
-                        "priority": dpi_priority,
-                        "action": f"Fornire e utilizzare {dpi_text}",
-                        "source": specialist_name,
-                        "category": "dpi_safety"
-                    })
-                    item_id += 1
-        
-        print(f"[AdvancedOrchestrator] Generated {len(all_action_items)} action items from specialists")
-        
-        # Calculate summary metrics
-        critical_issues = 0
-        if classification.get("risk_mapping"):
-            detected_risks = classification["risk_mapping"].get("detected_risks", {})
-            critical_risk_types = ["hot_work", "confined_space", "electrical", "height"]
-            critical_issues = len([r for r in detected_risks.keys() if r in critical_risk_types and detected_risks[r].get("confidence", 0) > 0.5])
-        
-        # Build final result
-        return {
-            "analysis_id": f"advanced_direct_{int(time.time())}_{permit_data.get('id')}",
-            "permit_id": permit_data.get("id"),
-            "processing_time": round(processing_time, 2),
-            
-            # Executive Summary
-            "executive_summary": {
-                "overall_score": 0.85,
-                "critical_issues": critical_issues,
-                "recommendations": len(all_action_items),
-                "compliance_level": "CONTROLLI RICHIESTI" if len(all_action_items) > 0 else "CONFORME",
-                "estimated_completion_time": f"{len(all_action_items) * 15}-{len(all_action_items) * 45} minuti",
-                "key_findings": [
-                    f"⚠️ RISCHI IDENTIFICATI: {', '.join(classification.get('risk_mapping', {}).get('detected_risks', {}).keys())}",
-                    f"🔍 AZIONI RICHIESTE: {len(all_action_items)} controlli e DPI"
-                ],
-            },
-            
-            # Action items (the main output)
-            "action_items": all_action_items,
-            
-            # Agents involved
-            "agents_involved": agents_involved,
-            
-            # Citations (simplified)
-            "citations": {
-                "normative": [],
-                "internal": [],
-                "metadata": []
-            },
-            
-            # Performance metrics
-            "performance_metrics": {
-                "total_processing_time": round(processing_time, 2),
-                "step1_duration": "~30%",
-                "step2_duration": "~60%",
-                "step3_duration": "~10%",
-                "specialists_activated": len([r for r in specialist_results.values() if "error" not in r]),
-                "consolidation_performed": False,
-                "direct_conversion": True,
-                "risks_identified": len(classification.get('risk_mapping', {}).get('detected_risks', {})),
-                "documents_analyzed": len(context_documents),
-                "action_items_generated": len(all_action_items)
-            },
-            
-            # Additional metadata
-            "timestamp": time.time(),
-            "ai_version": "Advanced-Direct-2.0"
-        }
-    
-    def _build_direct_final_result(
-        self,
-        permit_data: Dict[str, Any],
-        permit_metadata: Dict[str, Any],
-        classification_result: Dict[str, Any],
-        specialist_results: Dict[str, Any],
-        dpi_results: Dict[str, Any],
-        consolidation_results: Dict[str, Any],
-        context_documents: List[Dict[str, Any]],
-        processing_time: float,
-        step_timings: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """
-        Build final result directly from consolidator output, bypassing enhanced workflow methods
-        """
-        
-        print(f"[AdvancedOrchestrator] Building direct final result from consolidator")
-        
-        # Extract consolidated actions directly from consolidator results
-        # DEBUG: Check what keys the consolidator actually returns
-        print(f"[AdvancedOrchestrator] Consolidator result keys: {list(consolidation_results.keys())}")
-        
-        # Try multiple possible keys for actions
-        consolidated_actions = []
-        if "actions" in consolidation_results:
-            consolidated_actions = consolidation_results["actions"]
-        elif "consolidated_actions" in consolidation_results:
-            consolidated_actions = consolidation_results["consolidated_actions"]
-        else:
-            # Fallback: check all keys for action-like data
-            for key, value in consolidation_results.items():
-                if isinstance(value, list) and key in ["final_actions", "result_actions", "prioritized_actions"]:
-                    consolidated_actions = value
-                    print(f"[AdvancedOrchestrator] Found actions under key: {key}")
-                    break
-        
-        print(f"[AdvancedOrchestrator] Got {len(consolidated_actions)} consolidated actions from consolidator")
-        if consolidated_actions:
-            print(f"[AdvancedOrchestrator] First action sample: {str(consolidated_actions[0])[:100]}...")
-        
-        # Extract DPI requirements from specialists and DPI agent
-        all_dpi_requirements = []
-        
-        # From specialists
-        for specialist_name, result in specialist_results.items():
-            if "error" not in result:
-                dpi_requirements = result.get("dpi_requirements", [])
-                for dpi in dpi_requirements:
-                    all_dpi_requirements.append({
-                        "requirement": str(dpi),
-                        "source": specialist_name,
-                        "category": "specialist_dpi"
-                    })
-        
-        # DPI agent removed - DPIEvaluatorAgent handles DPI as specialist
-        
-        print(f"[AdvancedOrchestrator] Extracted {len(all_dpi_requirements)} DPI requirements")
-        
-        # Build risk analysis summary from classification
-        risk_mapping = classification_result.get("classification", {}).get("risk_mapping", {})
-        detected_risks = risk_mapping.get("detected_risks", {})
-        
-        risk_summary = []
-        for risk_type, risk_info in detected_risks.items():
-            if isinstance(risk_info, dict):
-                severity = risk_info.get("severity", "media")
-                description = risk_info.get("description", f"Rischio {risk_type}")
-                risk_summary.append(f"• {description} (severità: {severity})")
-            else:
-                risk_summary.append(f"• Rischio {risk_type}")
-        
-        # Get workers count from permit metadata
-        workers_count = permit_metadata.get("workers_count", permit_data.get("workers_count"))
-        
-        # Build final result structure matching frontend expectations
-        final_result = {
-            "analysis": {
-                "title": f"Analisi HSE: {permit_data.get('title', 'Permesso di lavoro')}",
-                "executive_summary": consolidation_results.get("executive_summary", "Analisi completata con successo"),
-                "key_findings": risk_summary if risk_summary else ["Nessun rischio critico identificato"],
-                "risk_assessment": {
-                    "overall_level": risk_mapping.get("overall_risk_level", "MEDIO"),
-                    "critical_factors": list(detected_risks.keys()),
-                    "mitigation_status": "In elaborazione"
-                }
-            },
-            
-            "consolidated_actions": consolidated_actions,  # Direct from consolidator
-            
-            "action_items": [
-                {
-                    "id": i + 1,
-                    "type": "safety_action",
-                    "priority": self._convert_criticality_to_priority(action.get("criticality", action.get("priority", "media"))),
-                    "suggested_action": action.get("action", str(action)),
-                    "category": action.get("category", "general"),
-                    "timeline": action.get("timeline", "Da definire"),
-                    "responsible": action.get("responsible", "Da assegnare"),
-                    "status": action.get("status", "planned"),
-                    "frontend_display": {
-                        "icon": "⚠️" if self._convert_criticality_to_priority(action.get("criticality", action.get("priority", "media"))) == "alta" else "📋",
-                        "category_name": action.get("source", "General")
-                        # Removed urgency field - all actions are pre-work
-                    }
-                }
-                for i, action in enumerate(consolidated_actions)
-            ],
-            
-            "dpi_requirements": [
-                {
-                    "id": i + 1,
-                    "requirement": dpi["requirement"],
-                    "category": dpi["category"],
-                    "source": dpi["source"]
-                }
-                for i, dpi in enumerate(all_dpi_requirements)
-            ],
-            
-            "citations": {
-                "normative": consolidation_results.get("regulatory_references", []),
-                "internal": [],
-                "metadata": {
-                    "total_documents_analyzed": len(context_documents),
-                    "specialists_activated": len([r for r in specialist_results.values() if "error" not in r]),
-                    "consolidation_performed": True
-                }
-            },
-            
-            "custom_fields": {
-                "workers_count": workers_count
-            },
-            
-            "performance_metrics": {
-                "total_processing_time": round(processing_time, 2),
-                "step_timings": step_timings,
-                "consolidation_efficiency": consolidation_results.get("consolidation_metadata", {}).get("deduplication_efficiency", "N/A"),
-                "specialists_activated": len([r for r in specialist_results.values() if "error" not in r]),
-                "risks_identified": len(detected_risks),
-                "documents_analyzed": len(context_documents),
-                "consolidated_actions_count": len(consolidated_actions),
-                "dpi_requirements_count": len(all_dpi_requirements)
-            },
-            
-            "timestamp": time.time(),
-            "ai_version": "Direct-Consolidator-1.0"
-        }
-        
-        print(f"[AdvancedOrchestrator] Final result: {len(final_result['consolidated_actions'])} actions, {len(final_result['dpi_requirements'])} DPI")
-        return final_result
-    
-    def _build_simple_final_result(
+    def _validate_permit_data(self, permit_data: Dict[str, Any]) -> None:
+        """Validate permit data to prevent analysis errors"""
+        if not permit_data:
+            raise ValueError("Permit data is empty or None")
+
+        # Check required fields
+        required_fields = ['id', 'title', 'description']
+        for field in required_fields:
+            if field not in permit_data:
+                raise ValueError(f"Missing required field: {field}")
+
+            value = permit_data[field]
+            if value is None:
+                raise ValueError(f"Required field {field} is None")
+
+            # Convert to string if not already (handle numbers, etc.)
+            if not isinstance(value, str):
+                permit_data[field] = str(value)
+
+            # Check for empty strings
+            if field in ['title', 'description'] and not permit_data[field].strip():
+                raise ValueError(f"Required field {field} is empty")
+
+        # Validate optional fields that should be strings if present
+        string_fields = ['work_type', 'location', 'risks', 'controls']
+        for field in string_fields:
+            if field in permit_data and permit_data[field] is not None:
+                if not isinstance(permit_data[field], str):
+                    permit_data[field] = str(permit_data[field])
+
+        # Validate workers_count is a positive number if present
+        if 'workers_count' in permit_data and permit_data['workers_count'] is not None:
+            try:
+                workers_count = int(permit_data['workers_count'])
+                if workers_count < 0:
+                    raise ValueError("workers_count cannot be negative")
+                permit_data['workers_count'] = workers_count
+            except (ValueError, TypeError):
+                raise ValueError(f"workers_count must be a valid number, got: {permit_data['workers_count']}")
+
+        print(f"[AdvancedOrchestrator] Permit data validation passed for permit {permit_data['id']}")
+
+
+
+    def _build_final_result(
         self,
         permit_data: Dict[str, Any],
         permit_metadata: Dict[str, Any],
@@ -1610,20 +755,20 @@ class AdvancedHSEOrchestrator:
         processing_time: float,
         step_timings: Dict[str, str]
     ) -> Dict[str, Any]:
-        """Build final result directly from specialist and DPI results (no consolidation)"""
-        
-        print("[AdvancedOrchestrator] Building simple final result from specialists and DPI")
-        
+        """Build final result from specialist and DPI results"""
+
+        print("[AdvancedOrchestrator] Building final result from specialists and DPI")
+
         # Extract actions directly from specialists
         all_actions = []
         action_id = 1
-        
+
         # Get actions from specialist results
         for specialist_name, result in specialist_results.items():
             if "error" not in result:
                 recommended_actions = result.get("recommended_actions", [])
                 print(f"[AdvancedOrchestrator] {specialist_name}: {len(recommended_actions)} actions")
-                
+
                 for action in recommended_actions:
                     if isinstance(action, dict):
                         action_text = action.get("action", str(action))
@@ -1647,32 +792,32 @@ class AdvancedHSEOrchestrator:
                         }
                     })
                     action_id += 1
-        
+
         # Extract DPI requirements ONLY from DPI Evaluator - other specialists focus on procedures/actions
         all_dpi_requirements = []
-        
+
         # Only collect DPI from DPI Evaluator to avoid redundancy and conflicts
         if "DPI_Evaluator" in specialist_results and "error" not in specialist_results["DPI_Evaluator"]:
             dpi_requirements = specialist_results["DPI_Evaluator"].get("dpi_requirements", [])
             for dpi in dpi_requirements:
                 all_dpi_requirements.append({
                     "requirement": str(dpi),
-                    "source": "DPI_Evaluator", 
+                    "source": "DPI_Evaluator",
                     "category": "comprehensive_dpi_assessment"
                 })
-        
+
         # DPI agent removed - DPIEvaluatorAgent handles DPI as specialist
-        
+
         # Build executive summary
         total_actions = len(all_actions)
         total_dpi = len(all_dpi_requirements)
-        
+
         # Calculate AI usage statistics
         ai_usage_stats = self._calculate_ai_usage_statistics(specialist_results)
-        
+
         # Extract risks from classification
         detected_risks = classification_result.get("detected_risks", {})
-        
+
         # Build citations from documents
         citations = []
         for doc in context_documents[:3]:
@@ -1681,7 +826,7 @@ class AdvancedHSEOrchestrator:
                 "type": doc.get("document_type", "unknown"),
                 "reference": f"[FONTE: Documento Aziendale] {doc.get('title', 'N/A')}"
             })
-        
+
         final_result = {
             "analysis_id": permit_metadata.get("analysis_id"),
             "permit_id": permit_data.get("id", 1),
@@ -1690,6 +835,12 @@ class AdvancedHSEOrchestrator:
             "dpi_requirements": all_dpi_requirements,
             "citations": citations,
             "specialist_results": [specialist_results[name] for name in specialist_results.keys()],
+
+            # Add specialist_analysis structure for permits router compatibility
+            "specialist_analysis": {
+                "results_by_specialist": specialist_results
+            },
+
             "performance_metrics": {
                 "total_specialists": len(specialist_results),
                 "step_timings": step_timings,
@@ -1698,11 +849,11 @@ class AdvancedHSEOrchestrator:
             },
             "ai_analysis_statistics": ai_usage_stats,
             "timestamp": time.time(),
-            "agents_involved": ["Specialists"],
-            "ai_version": "Simplified-Direct-1.0"
+            "agents_involved": ["Risk_Classifier"] + list(specialist_results.keys()),
+            "ai_version": "Advanced-Final-1.0"
         }
-        
-        print(f"[AdvancedOrchestrator] Simple result: {total_actions} actions, {total_dpi} DPI from {len(specialist_results)} specialists")
+
+        print(f"[AdvancedOrchestrator] Final result: {total_actions} actions, {total_dpi} DPI from {len(specialist_results)} specialists")
         return final_result
     
     def _calculate_ai_usage_statistics(self, specialist_results: Dict[str, Any]) -> Dict[str, Any]:

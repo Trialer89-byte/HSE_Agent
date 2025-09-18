@@ -28,6 +28,18 @@ COMPETENZE SPECIALISTICHE:
 - Accesso e posizionamento mediante funi
 - Linee vita e punti di ancoraggio (UNI EN 795)
 
+VALUTAZIONE ATTREZZATURE NEL CONTESTO:
+- Le attrezzature sono MEZZI per svolgere l'attività, non l'oggetto del lavoro
+- Valuta idoneità delle attrezzature per lavori in quota nel contesto specifico
+- Se le attrezzature causano rischi aggiuntivi nella lavorazione, stabilisci azioni correttive solo se non già definite nel permesso di lavoro
+- Suggerisci modifiche operative o cambiamento attrezzature se inadeguate
+- Considera interazioni tra attrezzature e ambiente di lavoro in quota
+
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici (imbracature, caschi, scarpe, guanti, ecc.)
+- Esiste un DPI Specialist dedicato che gestisce tutti i dispositivi di protezione individuale
+- Concentrati SOLO sui rischi di caduta, sistemi anticaduta collettivi e controlli tecnici
+
 ANALISI RISCHI LAVORI IN QUOTA:
 1. CADUTA DALL'ALTO (rischio primario)
    - Caduta da bordi non protetti
@@ -91,8 +103,7 @@ SISTEMI TECNICI LAVORI IN QUOTA:
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """AI-based analysis of work at height risks and existing measures adequacy"""
         
-        # Get existing DPI and actions from permit
-        existing_dpi = permit_data.get('dpi_required', [])
+        # Get existing actions from permit - DPI handled by dedicated DPI specialist
         existing_actions = permit_data.get('risk_mitigation_actions', [])
         
         # Get available documents for context
@@ -111,49 +122,50 @@ SISTEMI TECNICI LAVORI IN QUOTA:
             print(f"[{self.name}] Document search failed: {e}")
             all_docs = available_docs
         
-        # Create AI analysis prompt
+        # Simplified AI analysis prompt maintaining all essential functionality
         permit_summary = f"""
-ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
-IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
+ANALISI QUOTA - PRE-AUTORIZZAZIONE
+Permesso NON ANCORA INIZIATO - valuta se approvabile.
 
-PERMESSO DA ANALIZZARE - LAVORI IN QUOTA:
+DATI PERMESSO:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
-TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
-UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+AZIONI ESISTENTI: {existing_actions}
 
-DISPOSITIVI DI PROTEZIONE PREVISTI NEL PERMESSO:
-{existing_dpi if existing_dpi else 'Nessun dispositivo specificato'}
+ANALISI RICHIESTA:
 
-AZIONI MITIGAZIONE RISCHI PREVISTE:
-{existing_actions if existing_actions else 'Nessuna azione specificata'}
+1. LAVORI IN QUOTA (>2m):
+   - Caduta dall'alto, caduta oggetti, condizioni meteo
+   - Distingui ATTIVITÀ vs ATTREZZATURE (mezzi usati)
 
-CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
+2. CONTROLLI OBBLIGATORI:
+   - Sistemi anticaduta collettivi prioritari (parapetti, reti)
+   - Sistemi tecnici da INSTALLARE prima inizio
+   - Procedure di sicurezza da PREDISPORRE
 
-ANALIZZA IL SEGUENTE:
-1. Questo lavoro comporta rischi di lavori in quota (>2 metri)?
-2. Quali sono i rischi specifici identificati (caduta, oggetti, meteo, ecc.)?
-3. Le attuali azioni di mitigazione sono sufficienti?
-4. Quali sistemi tecnici di protezione devono essere INSTALLATI prima dell'inizio?
-5. Quali procedure di sicurezza devono essere PREDISPOSTE?
+3. CONTROLLO DUPLICAZIONI:
+   - Se azione già presente, NON ripetere
+   - Se migliorabile: "MODIFICARE: [dettagli]"
+   - Solo azioni mancanti come nuove
 
-IMPORTANTE: Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
-NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici (imbracature, caschi, ecc.)
+- Esiste DPI Specialist dedicato
+- Focus su sistemi anticaduta collettivi e controlli tecnici
 
-Fornisci risposta strutturata in JSON con:
-- height_work_detected: boolean
-- risk_level: "basso|medio|alto|critico"
-- specific_risks: array di oggetti con type, description, severity
-- existing_actions_adequacy: "adeguate|inadeguate|parziali"
-- required_technical_systems: array di sistemi tecnici che devono essere INSTALLATI prima dell'inizio
-- missing_controls: array di procedure/controlli che devono essere PREDISPOSTI prima dell'inizio
-- recommendations: array di oggetti con formato {{"action": "descrizione azione", "criticality": "alta|media|bassa"}} per prerequisiti da soddisfare prima dell'approvazione (max 8)
+Rispondi SOLO JSON valido:
+{{
+  "height_work_detected": true/false,
+  "risk_level": "basso|medio|alto|critico",
+  "specific_risks": [{{"type": "tipo", "description": "desc", "severity": "bassa|media|alta"}}],
+  "existing_actions_adequacy": "adeguate|inadeguate|parziali",
+  "required_technical_systems": ["sistemi da installare"],
+  "missing_controls": ["procedure da predisporre"],
+  "recommendations": [{{"action": "azione", "criticality": "alta|media|bassa"}}]
+}}
 
-IMPORTANTE: Tutte le azioni devono essere implementate PRIMA dell'inizio lavori. La criticality indica il livello di rischio:
-- "alta": Rischi con alta probabilità E alta gravità (pericolo immediato per la vita)
-- "media": Rischi con media probabilità O media gravità (potenziali infortuni gravi)
-- "bassa": Rischi con bassa probabilità E bassa gravità (infortuni lievi o near miss)
+CRITICALITY: alta=pericolo vita, media=infortunio grave, bassa=procedure incomplete
         """
         
         # Get AI analysis

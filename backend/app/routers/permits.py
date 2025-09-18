@@ -17,7 +17,7 @@ from app.schemas.work_permit import (
 from app.services.auth_service import get_current_user
 from app.models.user import User
 from app.services.fast_ai_orchestrator import FastAIOrchestrator
-from app.services.vector_service import VectorService
+from app.services.service_factory import get_vector_service
 from app.agents.advanced_orchestrator import AdvancedHSEOrchestrator
 from app.core.permissions import require_permission
 
@@ -125,7 +125,7 @@ def convert_enhanced_result_to_response_format(enhanced_result: Dict, permit_id:
             "analysis_timestamp": performance.get("analysis_timestamp", datetime.now().isoformat())
         },
         "timestamp": datetime.now().isoformat(),
-        "agents_involved": list(enhanced_result.get("specialist_analysis", {}).get("results_by_specialist", {}).keys()) + ["DPI_Agent"],
+        "agents_involved": enhanced_result.get("agents_involved", list(enhanced_result.get("specialist_analysis", {}).get("results_by_specialist", {}).keys())),
         "ai_version": enhanced_result.get("ai_version", "Enhanced_Workflow_v2.0")
     }
 
@@ -440,7 +440,7 @@ async def analyze_permit_preview(
                     "user_role": current_user.role,
                     "department": getattr(current_user, 'department', 'safety')
                 },
-                vector_service=VectorService()
+                vector_service=get_vector_service()
             )
             logger.info("Using Advanced orchestrator with 3-step specialist process")
         else:
@@ -456,7 +456,7 @@ async def analyze_permit_preview(
             search_query = f"{temp_permit_data.get('title', '')} {temp_permit_data.get('description', '')} {temp_permit_data.get('work_type', '')}"
             
             try:
-                vector_service = VectorService()
+                vector_service = get_vector_service()
                 relevant_docs = await vector_service.hybrid_search(
                     query=search_query,
                     filters={
@@ -599,7 +599,7 @@ async def analyze_permit_comprehensive(
     
     try:
         # Initialize vector service for searches
-        vector_service = VectorService()
+        vector_service = get_vector_service()
         
         # Search relevant documents - try PostgreSQL first, fallback to vector search
         search_query = f"{permit.title} {permit.description} {permit.work_type or ''}"

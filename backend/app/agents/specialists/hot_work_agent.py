@@ -28,6 +28,18 @@ COMPETENZE SPECIALISTICHE:
 - Sistemi spegnimento fissi/portatili
 - Procedure emergenza incendio
 
+VALUTAZIONE ATTREZZATURE NEL CONTESTO:
+- Le attrezzature sono MEZZI per svolgere l'attività, non l'oggetto del lavoro
+- Valuta idoneità delle attrezzature per lavori a caldo nel contesto specifico
+- Se le attrezzature causano rischi aggiuntivi nella lavorazione, stabilisci azioni correttive solo se non già definite nel permesso di lavoro
+- Suggerisci modifiche operative o cambiamento attrezzature se inadeguate per lavori a caldo
+- Considera interazioni tra attrezzature e presenza di materiali infiammabili/esplosivi
+
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici (maschere da saldatura, tute ignifughe, scarpe, guanti, ecc.)
+- Esiste un DPI Specialist dedicato che gestisce tutti i dispositivi di protezione individuale
+- Concentrati SOLO sui rischi di incendio/esplosione, fumi, radiazioni e controlli tecnici
+
 TIPOLOGIE LAVORI A CALDO:
 1. SALDATURA (arc welding, TIG, MIG, elettrodo)
 2. TAGLIO TERMICO (ossitaglio, plasma, laser)
@@ -94,8 +106,7 @@ CRITERI STOP LAVORI CALDI:
     async def analyze(self, permit_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """AI-powered hot work risk analysis"""
 
-        # Get existing DPI and actions from permit
-        existing_dpi = permit_data.get('dpi_required', [])
+        # Get existing actions from permit - DPI handled by dedicated DPI specialist
         existing_actions = permit_data.get('risk_mitigation_actions', [])
 
         # Get available documents for context
@@ -114,35 +125,38 @@ CRITERI STOP LAVORI CALDI:
             print(f"[{self.name}] Document search failed: {e}")
             all_docs = available_docs
 
-        # Create AI analysis prompt
+        # Simplified AI analysis prompt maintaining all essential functionality
         permit_summary = f"""
-ANALISI PERMESSO DI LAVORO - FASE PRE-AUTORIZZAZIONE
-IMPORTANTE: Stai analizzando un PERMESSO DI LAVORO che deve ancora essere approvato. Il lavoro NON È ANCORA INIZIATO.
+ANALISI CALDO - PRE-AUTORIZZAZIONE
+Permesso NON ANCORA INIZIATO - valuta se approvabile.
 
-PERMESSO DA ANALIZZARE - LAVORI A CALDO:
+DATI PERMESSO:
 TITOLO: {permit_data.get('title', 'N/A')}
 DESCRIZIONE: {permit_data.get('description', 'N/A')}
-TIPO LAVORO: {permit_data.get('work_type', 'N/A')}
-UBICAZIONE: {permit_data.get('location', 'N/A')}
 ATTREZZATURE: {permit_data.get('equipment', 'N/A')}
+AZIONI ESISTENTI: {existing_actions}
 
-DISPOSITIVI DI PROTEZIONE PREVISTI NEL PERMESSO:
-{existing_dpi if existing_dpi else 'Nessun dispositivo specificato'}
+ANALISI RICHIESTA:
 
-AZIONI MITIGAZIONE RISCHI PREVISTE:
-{existing_actions if existing_actions else 'Nessuna azione specificata'}
+1. LAVORI A CALDO:
+   - Saldatura, taglio, fiamme: rischi incendio, esplosione, fumi
+   - Distingui ATTIVITÀ vs ATTREZZATURE (mezzi usati)
 
-CONTESTO: Il tuo ruolo è valutare SE questo permesso può essere APPROVATO e quali PREREQUISITI di sicurezza devono essere soddisfatti PRIMA dell'inizio del lavoro.
+2. CONTROLLI OBBLIGATORI:
+   - Fire Watch, Hot Work Permit
+   - Rimozione materiali infiammabili
+   - Sistemi spegnimento
+   - Procedure emergenza
 
-ANALIZZA I SEGUENTI ASPETTI:
-1. Questo lavoro comporta operazioni a caldo (saldatura, taglio, fiamme)?
-2. Quali sono i rischi specifici (incendio, esplosione, fumi, radiazioni)?
-3. Le attuali azioni di mitigazione sono sufficienti?
-4. Quali controlli critici devono essere PREDISPOSTI (Fire Watch, Hot Work Permit, ecc.)?
-5. Quali procedure di emergenza devono essere PREDISPOSTE?
+3. CONTROLLO DUPLICAZIONI:
+   - Se azione già presente, NON ripetere
+   - Se migliorabile: "MODIFICARE: [dettagli]"
+   - Solo azioni mancanti come nuove
 
-IMPORTANTE: Le tue raccomandazioni devono essere PREREQUISITI che devono essere soddisfatti PRIMA dell'approvazione del permesso.
-NON suggerire di "sospendere" o "interrompere" il lavoro - piuttosto specifica cosa deve essere PREPARATO/PREDISPOSTO prima dell'inizio.
+IMPORTANTE - NON COMPETENZA DPI:
+- NON suggerire DPI specifici (maschere saldatura, tute ignifughe, ecc.)
+- Esiste DPI Specialist dedicato
+- Focus su controlli incendio/esplosione e sistemi spegnimento
 
 Fornisci risposta strutturata in JSON con:
 - hot_work_detected: boolean

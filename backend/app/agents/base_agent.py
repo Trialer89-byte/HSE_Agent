@@ -57,12 +57,12 @@ class BaseHSEAgent(ABC):
             docs_context = ""
             if context_documents:
                 docs_context = "\n\nDOCUMENTI AZIENDALI RILEVANTI:\n"
-                for i, doc in enumerate(context_documents[:3], 1):  # Top 3 docs
+                for i, doc in enumerate(context_documents[:3], 1):  # Top 3 docs for better context
                     docs_context += f"\n[DOCUMENTO {i}] {doc.get('title', 'N/A')}\n"
                     docs_context += f"Tipo: {doc.get('document_type', 'N/A')}\n"
-                    content = doc.get('content', '')[:800]  # First 800 chars for specialists
-                    docs_context += f"Contenuto rilevante:\n{content}...\n"
-                    docs_context += "-" * 50 + "\n"
+                    content = doc.get('content', '')  # Use full content for better analysis
+                    docs_context += f"Contenuto rilevante:\n{content}\n"
+                    docs_context += "-" * 30 + "\n"
                 
                 docs_context += "\nIMPORTANTE: Quando citi informazioni dai documenti, usa '[FONTE: Documento Aziendale]' seguito dal titolo del documento.\n"
             
@@ -135,13 +135,23 @@ Se utilizzi informazioni dai documenti aziendali, CITALE SEMPRE come '[FONTE: Do
             # Create specialized query combining domain keywords with permit query
             specialized_query = f"{self.specialization} {' '.join(self.activation_keywords[:5])} {query}"
             
-            # Use semantic search for better relevance on technical HSE documents
-            specialized_docs = await self.vector_service.semantic_search(
-                query=specialized_query,
-                tenant_id=tenant_id,
-                document_types=["procedura_sicurezza", "istruzione_operativa", "manuale", "procedura"],
-                limit=limit
-            )
+            # Use optimized semantic search with native multi-tenancy for better performance
+            if hasattr(self.vector_service, 'fast_semantic_search'):
+                # Use optimized native multi-tenancy search (3-5x faster)
+                specialized_docs = await self.vector_service.fast_semantic_search(
+                    query=specialized_query,
+                    tenant_id=tenant_id,
+                    document_types=["procedura_sicurezza", "istruzione_operativa", "manuale", "procedura"],
+                    limit=limit
+                )
+            else:
+                # Fallback to standard semantic search
+                specialized_docs = await self.vector_service.semantic_search(
+                    query=specialized_query,
+                    tenant_id=tenant_id,
+                    document_types=["procedura_sicurezza", "istruzione_operativa", "manuale", "procedura"],
+                    limit=limit
+                )
             
             print(f"[{self.name}] Autonomous search found {len(specialized_docs)} specialized documents")
             return specialized_docs

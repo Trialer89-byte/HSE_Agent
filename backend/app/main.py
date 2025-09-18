@@ -41,16 +41,20 @@ async def lifespan(app: FastAPI):
         storage_service = StorageService()
         logger.info("MinIO connection verified")
         
-        # Test Weaviate connection
+        # Initialize optimized vector service with native multi-tenancy
         try:
-            from app.services.vector_service import VectorService
-            vector_service = VectorService()
-            if vector_service.client:
-                logger.info("Weaviate connection verified")
+            from app.services.service_factory import VectorServiceFactory
+            vector_service = VectorServiceFactory.get_vector_service()
+            service_info = VectorServiceFactory.get_service_info()
+
+            if vector_service and vector_service.client:
+                logger.info(f"Vector Service initialized: {service_info['service_type']}")
+                logger.info(f"Performance: {service_info['performance_profile']}")
+                logger.info(f"Security: {service_info['security_level']}")
             else:
-                logger.warning("Weaviate connection failed - running in PostgreSQL-only mode")
+                logger.warning("Vector service unavailable - running in PostgreSQL-only mode")
         except Exception as weaviate_error:
-            logger.warning(f"Weaviate connection failed: {weaviate_error}")
+            logger.warning(f"Vector service initialization failed: {weaviate_error}")
         
     except Exception as e:
         logger.warning(f"External service connectivity issue: {e}")
